@@ -1,0 +1,1684 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>ระบบจัดทำรายงานภาพถ่ายสำรวจที่ดิน (A4)</title>
+  
+  <!-- Google Fonts: Sarabun -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,400&display=swap" rel="stylesheet">
+
+  <!-- Tailwind CSS via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Sarabun', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#eff6ff',
+              100: '#dbeafe',
+              200: '#bfdbfe',
+              500: '#3b82f6',
+              600: '#2563eb',
+              700: '#1d4ed8',
+              800: '#1e40af',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- External CDNs -->
+  <!-- exifr for silent EXIF timestamp parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.js"></script>
+  <!-- jsPDF for A4 PDF export -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+  <!-- JSZip for multi-page JPG bundling -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <style>
+    body {
+      font-family: 'Sarabun', sans-serif;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Print Styles: A4 Portrait Exact Fit */
+    @page {
+      size: A4 portrait;
+      margin: 0;
+    }
+
+    @media print {
+      body * {
+        visibility: hidden !important;
+      }
+      #print-container, #print-container * {
+        visibility: visible !important;
+      }
+      #print-container {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        background: #ffffff;
+      }
+      .print-page-wrapper {
+        width: 210mm;
+        height: 297mm;
+        page-break-after: always;
+        break-after: page;
+        page-break-inside: avoid;
+        break-inside: avoid;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      .print-page-wrapper img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        display: block;
+      }
+    }
+
+    /* Custom smooth scrollbar */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 min-h-screen flex flex-col antialiased selection:bg-blue-200">
+
+  <!-- TOP APP BAR -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center space-x-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white shadow-md shadow-blue-500/20">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+          </svg>
+        </div>
+        <div>
+          <h1 class="text-lg md:text-xl font-bold text-slate-900 tracking-tight leading-none">รายงานภาพถ่ายสำรวจที่ดิน</h1>
+          <p class="text-xs text-slate-500 mt-1">จัดหน้ารายงาน A4 200 DPI อัตโนมัติ & ส่งออก PDF/JPG ทันที</p>
+        </div>
+      </div>
+      <div class="flex items-center space-x-2">
+        <span class="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 border border-emerald-200">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span>
+          ใช้งานออฟไลน์ได้ 100%
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTAINER -->
+  <main class="flex-grow max-w-5xl w-full mx-auto px-3 sm:px-4 py-5 space-y-6">
+
+    <!-- SECTION 1: HEADER INPUTS & LOCAL STATE PERSISTENCE -->
+    <section class="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200 transition-all">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 mb-4 border-b border-slate-100">
+        <div>
+          <h2 class="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+            <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
+            </svg>
+            ข้อมูลประจำแปลงสำรวจ
+          </h2>
+          <p class="text-xs text-slate-500">บันทึกข้อมูลอัตโนมัติในเครื่อง ไม่สูญหายเมื่อสลับแอป</p>
+        </div>
+        
+        <!-- PROMINENT BUTTON: เริ่มแปลงถัดไป (คงชื่องานเดิม) -->
+        <button id="btn-next-parcel" type="button" class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-semibold text-sm shadow-sm transition active:scale-95 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-1">
+          <svg class="w-4 h-4 text-amber-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+          </svg>
+          เริ่มแปลงถัดไป (คงชื่องานเดิม)
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Project Name -->
+        <div>
+          <label for="project-name" class="block text-sm font-semibold text-slate-700 mb-1.5">
+            ชื่องาน (Project Name) <span class="text-rose-500">*</span>
+          </label>
+          <div class="relative">
+            <input type="text" id="project-name" placeholder="ระบุชื่องาน เช่น ระบบโครงข่ายไฟฟ้า ...." 
+                   class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-sm focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition shadow-inner">
+            <div id="save-indicator-project" class="absolute right-3 top-3 text-xs text-slate-400 opacity-0 transition-opacity">
+              บันทึกแล้ว
+            </div>
+          </div>
+        </div>
+
+        <!-- Land Parcel Number -->
+        <div>
+          <label for="parcel-number" class="block text-sm font-semibold text-slate-700 mb-1.5">
+            เลขแปลงที่ดิน (Land Parcel Number) <span class="text-rose-500">*</span>
+          </label>
+          <div class="relative">
+            <input type="text" id="parcel-number" placeholder="ระบุเลขแปลง เช่น A001 B001" 
+                   class="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-sm font-semibold focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition shadow-inner">
+            <div id="save-indicator-parcel" class="absolute right-3 top-3 text-xs text-slate-400 opacity-0 transition-opacity">
+              บันทึกแล้ว
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 2: PHOTO UPLOAD & IMMEDIATE COMPRESSION -->
+    <section class="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
+        <div>
+          <h2 class="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+            <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+            </svg>
+            อัปโหลดรูปภาพสำรวจ
+          </h2>
+          <p class="text-xs text-slate-500">ระบบบีบอัดรูปภาพอัตโนมัติทันทีทีละภาพ ปลอดภัยต่อหน่วยความจำมือถือ (ไม่กระตุก/ไม่ค้าง)</p>
+        </div>
+
+        <!-- Sorting Button -->
+        <button id="btn-sort-chronological" type="button" class="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs sm:text-sm font-semibold border border-slate-300 transition active:scale-95 disabled:opacity-50 disabled:pointer-events-none" disabled>
+          <svg class="w-4 h-4 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+          </svg>
+          เรียงตามเวลาถ่ายภาพอัตโนมัติ
+        </button>
+      </div>
+
+      <!-- File Drop / Picker Area -->
+      <div id="drop-zone" class="border-2 border-dashed border-slate-300 hover:border-blue-500 hover:bg-blue-50/40 rounded-2xl p-6 sm:p-8 text-center transition cursor-pointer relative group">
+        <input type="file" id="file-input" multiple accept="image/jpeg,image/jpg,image/png,image/gif" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10">
+        
+        <div class="flex flex-col items-center justify-center space-y-2">
+          <div class="w-14 h-14 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center group-hover:scale-110 transition duration-200 shadow-sm">
+            <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path>
+            </svg>
+          </div>
+          <div class="text-sm font-bold text-slate-800">
+            แตะที่นี่เพื่อเลือกรูปภาพ หรือ ลากไฟล์รูปมาวาง
+          </div>
+          <p class="text-xs text-slate-500 max-w-md">
+            รองรับ JPG, JPEG, PNG, GIF (เลือกได้หลายภาพพร้อมกัน และสามารถกดเพิ่มภาพต่อยอดได้ตลอดเวลา)
+          </p>
+          <span class="inline-block mt-2 px-3 py-1 bg-blue-50 text-blue-700 text-xs font-medium rounded-lg border border-blue-200">
+            ระบบจะย่อขนาดด้านยาวสุดเหลือ 1600px ที่คุณภาพ JPEG 85% โดยอัตโนมัติ
+          </span>
+        </div>
+      </div>
+
+      <!-- Processing Progress Bar (Visible during compression) -->
+      <div id="processing-indicator" class="hidden mt-4 bg-blue-50 border border-blue-200 rounded-xl p-3.5">
+        <div class="flex items-center justify-between text-xs font-semibold text-blue-900 mb-1.5">
+          <span id="processing-status-text" class="flex items-center gap-2">
+            <svg class="animate-spin w-4 h-4 text-blue-600" fill="none" viewBox="0 0 24 24">
+              <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+              <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+            </svg>
+            กำลังประมวลผลและบีบอัดรูปภาพ...
+          </span>
+          <span id="processing-percent">0%</span>
+        </div>
+        <div class="w-full bg-blue-200 rounded-full h-2 overflow-hidden">
+          <div id="processing-progress-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-150" style="width: 0%"></div>
+        </div>
+      </div>
+
+      <!-- Live Compression Summary Badge -->
+      <div id="compression-badge" class="hidden mt-4 p-3 rounded-xl bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 text-emerald-900 text-xs sm:text-sm font-medium flex items-center justify-between flex-wrap gap-2 shadow-sm">
+        <div class="flex items-center gap-2">
+          <svg class="w-5 h-5 text-emerald-600 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+          </svg>
+          <span id="compression-badge-text">สรุปการบีบอัดรูปภาพ</span>
+        </div>
+        <span id="compression-savings-tag" class="px-2.5 py-0.5 rounded-full bg-emerald-600 text-white font-bold text-xs shadow-xs">
+          ประหยัด 0%
+        </span>
+      </div>
+    </section>
+
+    <!-- SECTION 3: PHOTO MANAGEMENT (THUMBNAIL CARDS & CONTROLS) -->
+    <section id="photos-section" class="space-y-4">
+      <div class="flex items-center justify-between">
+        <h2 class="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+          <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
+          </svg>
+          รายการรูปภาพที่อัปโหลด (<span id="photo-count">0</span> ภาพ)
+        </h2>
+        <span class="text-xs text-slate-500">สามารถหมุนภาพ สลับลำดับ และเลือกแท็กคำอธิบายได้อิสระ</span>
+      </div>
+
+      <!-- Empty state -->
+      <div id="photos-empty-state" class="bg-white rounded-2xl p-8 text-center border border-slate-200">
+        <div class="w-12 h-12 mx-auto rounded-full bg-slate-100 text-slate-400 flex items-center justify-center mb-3">
+          <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>
+          </svg>
+        </div>
+        <p class="text-sm font-semibold text-slate-700">ยังไม่มีรูปภาพในระบบ</p>
+        <p class="text-xs text-slate-500 mt-1">กรุณากดเลือกรูปภาพจากช่องอัปโหลดด้านบนเพื่อเริ่มต้นสร้างรายงาน</p>
+      </div>
+
+      <!-- Photos Grid List -->
+      <div id="photos-grid" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Photo cards rendered dynamically via JS -->
+      </div>
+    </section>
+
+    <!-- SECTION 4: A4 PAGE PREVIEW & CASCADING LAYOUT -->
+    <section id="pages-preview-section" class="space-y-4 pt-2">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div>
+          <h2 class="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+            <svg class="w-5 h-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+            </svg>
+            ตัวอย่างหน้าเอกสาร A4 (200 DPI) (<span id="page-count-badge">0</span> หน้า)
+          </h2>
+          <p class="text-xs text-slate-500">ปรับเปลี่ยนการจัดวาง 2 หรือ 4 รูปต่อหน้าได้อิสระ รูปภาพจะไหลเลื่อนจัดหน้าถัดไปให้อัตโนมัติ</p>
+        </div>
+      </div>
+
+      <!-- Container for previewed pages -->
+      <div id="pages-container" class="space-y-8">
+        <!-- Rendered A4 Page Cards via JS -->
+      </div>
+    </section>
+
+  </main>
+
+  <!-- BOTTOM ACTION BAR (STICKY EXPORT BAR) -->
+  <footer class="sticky bottom-0 z-30 bg-white/95 backdrop-blur-md border-t border-slate-200 py-3 shadow-lg">
+    <div class="max-w-5xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div class="text-xs text-slate-600 hidden sm:block">
+        <span class="font-bold text-slate-900" id="footer-summary-text">พร้อมส่งออก: 0 ภาพ (0 หน้า)</span>
+        <span class="block text-slate-400">ขนาดหน้ามาตรฐาน A4 Portrait (1654 x 2339 px)</span>
+      </div>
+
+      <div class="flex items-center gap-2 w-full sm:w-auto">
+        <!-- Print Button -->
+        <button id="btn-print" type="button" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-semibold text-xs sm:text-sm shadow-md transition active:scale-95 disabled:opacity-40 disabled:pointer-events-none" disabled>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path>
+          </svg>
+          สั่งพิมพ์ทันที
+        </button>
+
+        <!-- Download JPG Button -->
+        <button id="btn-export-jpg" type="button" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-3.5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-xs sm:text-sm shadow-md shadow-emerald-600/20 transition active:scale-95 disabled:opacity-40 disabled:pointer-events-none" disabled>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+          </svg>
+          ดาวน์โหลด JPG
+        </button>
+
+        <!-- Download PDF Button -->
+        <button id="btn-export-pdf" type="button" class="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs sm:text-sm shadow-md shadow-blue-600/20 transition active:scale-95 disabled:opacity-40 disabled:pointer-events-none" disabled>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+          </svg>
+          ดาวน์โหลด PDF
+        </button>
+      </div>
+    </div>
+  </footer>
+
+  <!-- MODAL: FILENAME CONFIRMATION -->
+  <div id="filename-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 hidden opacity-0 transition-opacity duration-200">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 transform scale-95 transition-transform duration-200" id="filename-modal-card">
+      <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-100">
+        <h3 id="modal-title" class="text-base font-bold text-slate-900 flex items-center gap-2">
+          <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path>
+          </svg>
+          ยืนยันชื่อไฟล์ส่งออก
+        </h3>
+        <button id="btn-close-modal" type="button" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+
+      <div class="space-y-4">
+        <div>
+          <label for="export-filename-input" class="block text-sm font-semibold text-slate-700 mb-1">
+            ชื่อไฟล์บันทึก (แก้ไขได้)
+          </label>
+          <div class="flex rounded-xl shadow-sm">
+            <input type="text" id="export-filename-input" 
+                   class="flex-1 px-3.5 py-2.5 bg-slate-50 border border-slate-300 rounded-l-xl text-slate-900 text-sm font-medium focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition">
+            <span id="export-ext-badge" class="inline-flex items-center px-3.5 rounded-r-xl border border-l-0 border-slate-300 bg-slate-100 text-slate-600 font-semibold text-sm">
+              .pdf
+            </span>
+          </div>
+          <p class="text-xs text-slate-400 mt-1">อ้างอิงจากเลขแปลงที่ดิน (อักขระพิเศษ / \ : * ? " &lt; &gt; | ถูกแทนที่ด้วย - อัตโนมัติ)</p>
+        </div>
+
+        <!-- Info summary card in modal -->
+        <div class="bg-slate-50 rounded-xl p-3 border border-slate-200 text-xs space-y-1.5 text-slate-600">
+          <div class="flex justify-between">
+            <span>จำนวนหน้าเอกสาร:</span>
+            <span id="modal-pages-info" class="font-bold text-slate-900">0 หน้า</span>
+          </div>
+          <div class="flex justify-between">
+            <span>จำนวนรูปภาพทั้งหมด:</span>
+            <span id="modal-photos-info" class="font-bold text-slate-900">0 รูป</span>
+          </div>
+          <div class="flex justify-between">
+            <span>ขนาดไฟล์โดยประมาณ:</span>
+            <span id="modal-filesize-estimate" class="font-bold text-blue-600">~0 MB</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-6 flex items-center justify-end gap-2.5">
+        <button id="btn-cancel-modal" type="button" class="px-4 py-2 rounded-xl text-slate-700 hover:bg-slate-100 text-sm font-semibold transition">
+          ยกเลิก
+        </button>
+        <button id="btn-confirm-export" type="button" class="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-md shadow-blue-500/20 transition active:scale-95">
+          <span id="confirm-export-text">ยืนยันดาวน์โหลด</span>
+          <svg id="confirm-export-spinner" class="hidden animate-spin w-4 h-4 text-white" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: FULLSCREEN LIGHTBOX (PAGE INSPECTION) -->
+  <div id="lightbox-modal" class="fixed inset-0 z-50 flex flex-col bg-slate-950/95 backdrop-blur-md hidden opacity-0 transition-opacity duration-200">
+    <!-- Lightbox Top bar -->
+    <div class="flex items-center justify-between px-4 py-3 bg-slate-900/80 border-b border-slate-800 text-white z-10">
+      <div class="flex items-center space-x-3">
+        <span class="text-sm font-bold" id="lightbox-page-title">หน้า 1/1</span>
+        <span class="text-xs text-slate-400 hidden sm:inline" id="lightbox-sub-title">ตรวจสอบความคมชัด A4 200 DPI</span>
+      </div>
+      <div class="flex items-center space-x-2">
+        <button id="btn-lightbox-prev" type="button" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold flex items-center gap-1 transition">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+          <span class="hidden sm:inline">หน้าก่อนหน้า</span>
+        </button>
+        <button id="btn-lightbox-next" type="button" class="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold flex items-center gap-1 transition">
+          <span class="hidden sm:inline">หน้าถัดไป</span>
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+        </button>
+        <button id="btn-lightbox-close" type="button" class="ml-2 p-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white transition">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Lightbox Zoomable Content Area -->
+    <div class="flex-1 overflow-auto p-4 flex items-center justify-center cursor-zoom-out" id="lightbox-canvas-wrapper">
+      <img id="lightbox-img" class="max-w-none shadow-2xl rounded border border-slate-800 transition-transform duration-150" alt="A4 Page Inspection">
+    </div>
+
+    <!-- Lightbox Bottom Controls -->
+    <div class="bg-slate-900/80 border-t border-slate-800 px-4 py-2 flex items-center justify-center space-x-3 text-white text-xs">
+      <button id="btn-zoom-out" class="p-1.5 rounded bg-slate-800 hover:bg-slate-700 transition" title="ซูมออก">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 12H4"></path></svg>
+      </button>
+      <span id="zoom-level-text" class="font-mono text-slate-300">100%</span>
+      <button id="btn-zoom-in" class="p-1.5 rounded bg-slate-800 hover:bg-slate-700 transition" title="ซูมเข้า">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path></svg>
+      </button>
+      <button id="btn-zoom-reset" class="px-2 py-1 rounded bg-slate-800 hover:bg-slate-700 transition">
+        พอดีหน้าจอ
+      </button>
+    </div>
+  </div>
+
+  <!-- TOAST NOTIFICATION CONTAINER -->
+  <div id="toast-container" class="fixed bottom-20 left-1/2 transform -translate-x-1/2 z-50 flex flex-col space-y-2 pointer-events-none w-max max-w-sm px-4"></div>
+
+  <!-- HIDDEN PRINT CONTAINER (Rendered purely for @media print) -->
+  <div id="print-container"></div>
+
+  <!-- JAVASCRIPT APPLICATION LOGIC -->
+  <script>
+    // --- GLOBAL CONSTANTS & CONFIGURATION ---
+    const A4_WIDTH = 1654;   // 200 DPI A4 Width
+    const A4_HEIGHT = 2339;  // 200 DPI A4 Height
+    const MAX_IMAGE_EDGE = 1600;
+    const JPEG_COMPRESSION_QUALITY = 0.85;
+    const QUICK_TAG_OPTIONS = ['ที่ดิน', 'ต้นไม้', 'อาคารสิ่งปลูกสร้าง'];
+
+    // --- APPLICATION STATE ---
+    let state = {
+      projectName: '',
+      parcelNumber: '',
+      photos: [],         // Array of photo objects
+      pageLayouts: {},    // Map of pageIndex -> quota (2 or 4)
+      currentModalType: null, // 'pdf' or 'jpg'
+      lightboxPageIndex: 0,
+      lightboxZoom: 1.0,
+      renderedCanvases: [] // Cached rendered page canvas elements
+    };
+
+    // --- DOM REFERENCES ---
+    const projectNameInput = document.getElementById('project-name');
+    const parcelNumberInput = document.getElementById('parcel-number');
+    const saveIndicatorProject = document.getElementById('save-indicator-project');
+    const saveIndicatorParcel = document.getElementById('save-indicator-parcel');
+    const btnNextParcel = document.getElementById('btn-next-parcel');
+
+    const fileInput = document.getElementById('file-input');
+    const dropZone = document.getElementById('drop-zone');
+    const processingIndicator = document.getElementById('processing-indicator');
+    const processingStatusText = document.getElementById('processing-status-text');
+    const processingProgressBar = document.getElementById('processing-progress-bar');
+    const processingPercent = document.getElementById('processing-percent');
+
+    const compressionBadge = document.getElementById('compression-badge');
+    const compressionBadgeText = document.getElementById('compression-badge-text');
+    const compressionSavingsTag = document.getElementById('compression-savings-tag');
+
+    const btnSortChronological = document.getElementById('btn-sort-chronological');
+    const photosEmptyState = document.getElementById('photos-empty-state');
+    const photosGrid = document.getElementById('photos-grid');
+    const photoCountSpan = document.getElementById('photo-count');
+    const pageCountBadge = document.getElementById('page-count-badge');
+    const pagesContainer = document.getElementById('pages-container');
+
+    const footerSummaryText = document.getElementById('footer-summary-text');
+    const btnPrint = document.getElementById('btn-print');
+    const btnExportJpg = document.getElementById('btn-export-jpg');
+    const btnExportPdf = document.getElementById('btn-export-pdf');
+
+    // Filename Modal DOM
+    const filenameModal = document.getElementById('filename-modal');
+    const filenameModalCard = document.getElementById('filename-modal-card');
+    const modalTitle = document.getElementById('modal-title');
+    const exportFilenameInput = document.getElementById('export-filename-input');
+    const exportExtBadge = document.getElementById('export-ext-badge');
+    const modalPagesInfo = document.getElementById('modal-pages-info');
+    const modalPhotosInfo = document.getElementById('modal-photos-info');
+    const modalFilesizeEstimate = document.getElementById('modal-filesize-estimate');
+    const btnCloseModal = document.getElementById('btn-close-modal');
+    const btnCancelModal = document.getElementById('btn-cancel-modal');
+    const btnConfirmExport = document.getElementById('btn-confirm-export');
+    const confirmExportText = document.getElementById('confirm-export-text');
+    const confirmExportSpinner = document.getElementById('confirm-export-spinner');
+
+    // Lightbox DOM
+    const lightboxModal = document.getElementById('lightbox-modal');
+    const lightboxImg = document.getElementById('lightbox-img');
+    const lightboxCanvasWrapper = document.getElementById('lightbox-canvas-wrapper');
+    const lightboxPageTitle = document.getElementById('lightbox-page-title');
+    const lightboxSubTitle = document.getElementById('lightbox-sub-title');
+    const btnLightboxPrev = document.getElementById('btn-lightbox-prev');
+    const btnLightboxNext = document.getElementById('btn-lightbox-next');
+    const btnLightboxClose = document.getElementById('btn-lightbox-close');
+    const btnZoomIn = document.getElementById('btn-zoom-in');
+    const btnZoomOut = document.getElementById('btn-zoom-out');
+    const btnZoomReset = document.getElementById('btn-zoom-reset');
+    const zoomLevelText = document.getElementById('zoom-level-text');
+
+    const printContainer = document.getElementById('print-container');
+    const toastContainer = document.getElementById('toast-container');
+
+    // --- HELPER: TOAST NOTIFICATION ---
+    function showToast(message, type = 'info') {
+      const toast = document.createElement('div');
+      const bgColors = {
+        success: 'bg-emerald-600 text-white',
+        info: 'bg-slate-900 text-white',
+        warning: 'bg-amber-600 text-white',
+        error: 'bg-rose-600 text-white'
+      };
+      toast.className = `${bgColors[type] || bgColors.info} px-4 py-2.5 rounded-xl shadow-lg text-xs sm:text-sm font-semibold flex items-center gap-2 transform transition-all duration-300 opacity-0 translate-y-2 pointer-events-auto`;
+      
+      let icon = ``;
+      if (type === 'success') {
+        icon = `<svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>`;
+      } else if (type === 'error') {
+        icon = `<svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>`;
+      } else {
+        icon = `<svg class="w-4 h-4 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>`;
+      }
+
+      toast.innerHTML = `${icon}<span>${message}</span>`;
+      toastContainer.appendChild(toast);
+
+      requestAnimationFrame(() => {
+        toast.classList.remove('opacity-0', 'translate-y-2');
+      });
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', '-translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 3000);
+    }
+
+    // --- HELPER: FORMAT BYTES ---
+    function formatBytes(bytes) {
+      if (bytes === 0 || !bytes) return '0 Bytes';
+      const k = 1024;
+      const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+      const i = Math.floor(Math.log(bytes) / Math.log(k));
+      return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    }
+
+    // --- REQUIREMENT 1: HEADER INPUTS & LOCAL STATE PERSISTENCE ---
+    function initLocalStorage() {
+      const savedProject = localStorage.getItem('survey_project_name');
+      const savedParcel = localStorage.getItem('survey_parcel_no');
+
+      if (savedProject) {
+        state.projectName = savedProject;
+        projectNameInput.value = savedProject;
+      }
+      if (savedParcel) {
+        state.parcelNumber = savedParcel;
+        parcelNumberInput.value = savedParcel;
+      }
+
+      // Input event listeners with debounce visual indicator
+      let timeoutProject = null;
+      projectNameInput.addEventListener('input', (e) => {
+        state.projectName = e.target.value;
+        localStorage.setItem('survey_project_name', state.projectName);
+        saveIndicatorProject.classList.remove('opacity-0');
+        clearTimeout(timeoutProject);
+        timeoutProject = setTimeout(() => {
+          saveIndicatorProject.classList.add('opacity-0');
+        }, 1200);
+        renderA4Pages();
+      });
+
+      let timeoutParcel = null;
+      parcelNumberInput.addEventListener('input', (e) => {
+        state.parcelNumber = e.target.value;
+        localStorage.setItem('survey_parcel_no', state.parcelNumber);
+        saveIndicatorParcel.classList.remove('opacity-0');
+        clearTimeout(timeoutParcel);
+        timeoutParcel = setTimeout(() => {
+          saveIndicatorParcel.classList.add('opacity-0');
+        }, 1200);
+        renderA4Pages();
+      });
+
+      // Prominent Button: "เริ่มแปลงถัดไป (คงชื่องานเดิม)"
+      btnNextParcel.addEventListener('click', () => {
+        if (state.photos.length === 0 && !state.parcelNumber) {
+          showToast('ยังไม่มีข้อมูลแปลงที่ดินให้ล้าง', 'info');
+          return;
+        }
+
+        const confirmMsg = 'ต้องการเริ่มแปลงถัดไปหรือไม่?\n\n• ระบบจะคง "ชื่องาน" ไว้\n• ล้างรูปภาพทั้งหมด\n• ล้างเลขแปลงที่ดิน\n• รีเซ็ตการตั้งค่าการจัดหน้าทั้งหมด';
+        if (window.confirm(confirmMsg)) {
+          // Keep Project Name
+          // Clear Parcel Number
+          state.parcelNumber = '';
+          parcelNumberInput.value = '';
+          localStorage.removeItem('survey_parcel_no');
+
+          // Clear Photos & Layout overrides
+          state.photos = [];
+          state.pageLayouts = {};
+
+          updateUI();
+          showToast('เริ่มต้นแปลงถัดไปเรียบร้อยแล้ว (คงชื่องานเดิม)', 'success');
+        }
+      });
+    }
+
+    // --- REQUIREMENT 2: MEMORY-SAFE IMMEDIATE IMAGE COMPRESSION & UPLOAD ---
+    function setupFileUpload() {
+      // Trigger file selector from drop zone click (input is positioned over it)
+      fileInput.addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files);
+        if (files.length === 0) return;
+        await processUploadedFiles(files);
+        fileInput.value = ''; // Reset file input so identical files can be selected again
+      });
+
+      // Drag and Drop visual feedback
+      ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropZone.classList.add('border-blue-500', 'bg-blue-50/50');
+        });
+      });
+
+      ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          dropZone.classList.remove('border-blue-500', 'bg-blue-50/50');
+        });
+      });
+
+      dropZone.addEventListener('drop', async (e) => {
+        const dt = e.dataTransfer;
+        const files = Array.from(dt.files).filter(f => f.type.startsWith('image/'));
+        if (files.length > 0) {
+          await processUploadedFiles(files);
+        }
+      });
+    }
+
+    // Process each file immediately one by one to safeguard mobile device RAM
+    async function processUploadedFiles(fileList) {
+      if (!fileList || fileList.length === 0) return;
+
+      processingIndicator.classList.remove('hidden');
+      const total = fileList.length;
+
+      for (let i = 0; i < total; i++) {
+        const file = fileList[i];
+        const percent = Math.round(((i + 1) / total) * 100);
+
+        processingStatusText.innerHTML = `
+          <svg class="animate-spin w-4 h-4 text-blue-600 inline" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+          </svg>
+          กำลังบีบอัดรูปภาพ ${i + 1} จาก ${total} (${escapeHtml(file.name)})...
+        `;
+        processingProgressBar.style.width = `${percent}%`;
+        processingPercent.textContent = `${percent}%`;
+
+        try {
+          const photoData = await compressSingleImage(file);
+          if (photoData) {
+            state.photos.push(photoData);
+          }
+        } catch (err) {
+          console.error('Error processing file:', file.name, err);
+          showToast(`ไม่สามารถประมวลผลไฟล์: ${file.name}`, 'error');
+        }
+
+        // Allow UI to breathe between heavy canvas operations
+        await new Promise(resolve => setTimeout(resolve, 30));
+      }
+
+      processingIndicator.classList.add('hidden');
+      processingProgressBar.style.width = '0%';
+      showToast(`บีบอัดและเพิ่มรูปภาพ ${total} ภาพเรียบร้อยแล้ว`, 'success');
+      updateUI();
+    }
+
+    // Compress single image asynchronously and immediately release raw file blob
+    async function compressSingleImage(file) {
+      const originalSize = file.size;
+      let timestamp = null;
+
+      // 1. Silent EXIF reading (exifr): DO NOT put into caption!
+      try {
+        if (window.exifr && typeof window.exifr.parse === 'function') {
+          const exifData = await window.exifr.parse(file, ['DateTimeOriginal']);
+          if (exifData && exifData.DateTimeOriginal) {
+            timestamp = new Date(exifData.DateTimeOriginal);
+          }
+        }
+      } catch (exifErr) {
+        // Fallback silently if EXIF read fails
+      }
+
+      // Fallback timestamp to file.lastModified strictly for chronological sorting
+      if (!timestamp || isNaN(timestamp.getTime())) {
+        timestamp = file.lastModified ? new Date(file.lastModified) : new Date();
+      }
+
+      // 2. Load into HTML Image via temporary Object URL
+      const tempUrl = URL.createObjectURL(file);
+      const img = await new Promise((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error('ไม่สามารถโหลดรูปภาพได้'));
+        image.src = tempUrl;
+      });
+
+      // 3. Calculate target dimensions (Max Longest Edge = 1600px)
+      let origW = img.naturalWidth;
+      let origH = img.naturalHeight;
+      let targetW = origW;
+      let targetH = origH;
+
+      if (Math.max(origW, origH) > MAX_IMAGE_EDGE) {
+        if (origW >= origH) {
+          targetW = MAX_IMAGE_EDGE;
+          targetH = Math.round((origH * MAX_IMAGE_EDGE) / origW);
+        } else {
+          targetH = MAX_IMAGE_EDGE;
+          targetW = Math.round((origW * MAX_IMAGE_EDGE) / origH);
+        }
+      }
+
+      // 4. Render to Canvas with high smoothing quality
+      const canvas = document.createElement('canvas');
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext('2d');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, targetW, targetH);
+
+      // 5. Convert to compressed JPEG data URL
+      const compressedDataUrl = canvas.toDataURL('image/jpeg', JPEG_COMPRESSION_QUALITY);
+      
+      // Calculate compressed size from base64 length
+      const base64Len = compressedDataUrl.length - (compressedDataUrl.indexOf(',') + 1);
+      const compressedSize = Math.round((base64Len * 3) / 4);
+
+      // 6. CRITICAL MEMORY CLEANUP: Immediately revoke raw blob URL & wipe canvas
+      URL.revokeObjectURL(tempUrl);
+      canvas.width = 0;
+      canvas.height = 0;
+
+      return {
+        id: 'photo_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9),
+        name: file.name,
+        dataUrl: compressedDataUrl,
+        originalSize: originalSize,
+        compressedSize: compressedSize,
+        timestamp: timestamp,
+        rotation: 0, // 0, 90, 180, 270
+        caption: '', // Caption starts completely empty
+        width: targetW,
+        height: targetH
+      };
+    }
+
+    // Update Compression Summary Badge
+    function updateCompressionBadge() {
+      if (state.photos.length === 0) {
+        compressionBadge.classList.add('hidden');
+        return;
+      }
+
+      let totalOriginal = 0;
+      let totalCompressed = 0;
+
+      for (const p of state.photos) {
+        totalOriginal += p.originalSize;
+        totalCompressed += p.compressedSize;
+      }
+
+      const savings = totalOriginal > 0 ? Math.max(0, ((totalOriginal - totalCompressed) / totalOriginal) * 100) : 0;
+
+      compressionBadgeText.innerHTML = `
+        <span>ขนาดต้นฉบับรวม: <strong class="font-bold text-slate-800">${formatBytes(totalOriginal)}</strong></span>
+        <span class="mx-1 text-slate-400">→</span>
+        <span>หลังบีบอัด: <strong class="font-bold text-emerald-800">${formatBytes(totalCompressed)}</strong></span>
+      `;
+      compressionSavingsTag.textContent = `ประหยัดพื้นที่ ${savings.toFixed(1)}%`;
+      compressionBadge.classList.remove('hidden');
+    }
+
+    // --- REQUIREMENT 3: PHOTO CONTROLS, CHRONOLOGICAL SORT & QUICK TAGS ---
+    function setupPhotoSort() {
+      btnSortChronological.addEventListener('click', () => {
+        if (state.photos.length <= 1) return;
+
+        state.photos.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
+        updateUI();
+        showToast('เรียงลำดับรูปภาพตามเวลาถ่ายภาพ (เก่าสุดไปใหม่สุด) เรียบร้อยแล้ว', 'success');
+      });
+    }
+
+    // Render photo thumbnail cards
+    function renderPhotoCards() {
+      photoCountSpan.textContent = state.photos.length;
+      btnSortChronological.disabled = state.photos.length <= 1;
+
+      if (state.photos.length === 0) {
+        photosEmptyState.classList.remove('hidden');
+        photosGrid.innerHTML = '';
+        return;
+      }
+
+      photosEmptyState.classList.add('hidden');
+      photosGrid.innerHTML = '';
+
+      state.photos.forEach((photo, index) => {
+        const card = document.createElement('div');
+        card.className = 'bg-white rounded-2xl border border-slate-200 p-4 shadow-sm flex flex-col space-y-3 transition hover:shadow-md';
+
+        // Check which quick tags are currently active in the caption
+        const activeTags = getActiveTagsFromCaption(photo.caption);
+
+        card.innerHTML = `
+          <!-- Card Header & Ordering -->
+          <div class="flex items-center justify-between">
+            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
+              ภาพที่ #${index + 1}
+            </span>
+            <div class="flex items-center space-x-1">
+              <!-- Move Left (⬅️) -->
+              <button type="button" class="btn-move-left p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition" 
+                      title="เลื่อนขึ้น/ซ้าย" ${index === 0 ? 'disabled' : ''}>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"></path></svg>
+              </button>
+              <!-- Move Right (➡️) -->
+              <button type="button" class="btn-move-right p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition" 
+                      title="เลื่อนลง/ขวา" ${index === state.photos.length - 1 ? 'disabled' : ''}>
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path></svg>
+              </button>
+              <!-- Rotate 90° Clockwise -->
+              <button type="button" class="btn-rotate inline-flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-semibold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 transition" 
+                      title="หมุนตามเข็มนาฬิกา 90°">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                หมุนภาพ
+              </button>
+              <!-- Delete -->
+              <button type="button" class="btn-delete p-1.5 rounded-lg text-rose-500 hover:bg-rose-50 transition" title="ลบภาพนี้">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Thumbnail preview container with rotation applied -->
+          <div class="relative w-full h-44 bg-slate-900 rounded-xl overflow-hidden flex items-center justify-center border border-slate-200">
+            <img src="${photo.dataUrl}" alt="Thumbnail" 
+                 class="max-h-full max-w-full object-contain transition-transform duration-200" 
+                 style="transform: rotate(${photo.rotation}deg) scale(${photo.rotation % 180 !== 0 ? 0.72 : 1}); transform-origin: center center;">
+            <div class="absolute bottom-1 right-2 px-2 py-0.5 rounded bg-black/60 backdrop-blur-xs text-[10px] text-white font-mono">
+              ${formatBytes(photo.compressedSize)}
+            </div>
+          </div>
+
+          <!-- Multi-Select Quick Tag Pills -->
+          <div class="space-y-1.5">
+            <div class="text-[11px] font-semibold text-slate-500">แท็กด่วน (กดเพื่อเปิด/ปิด):</div>
+            <div class="flex flex-wrap gap-1.5">
+              ${QUICK_TAG_OPTIONS.map(tag => {
+                const isActive = activeTags.includes(tag);
+                return `
+                  <button type="button" data-tag="${tag}" 
+                          class="tag-pill px-2.5 py-1 rounded-lg text-xs font-semibold border transition active:scale-95 ${
+                            isActive 
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-xs' 
+                              : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200'
+                          }">
+                    ${tag}
+                  </button>
+                `;
+              }).join('')}
+            </div>
+          </div>
+
+          <!-- Editable Caption Input Box -->
+          <div>
+            <label class="block text-xs font-semibold text-slate-600 mb-1">
+              คำอธิบายใต้ภาพ (ระบุหรือแก้ไขได้อิสระ)
+            </label>
+            <input type="text" class="input-caption w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" 
+                   placeholder="เช่น ที่ดิน, หมุดแปลงที่ดินทิศเหนือ" value="${escapeHtml(photo.caption)}">
+          </div>
+        `;
+
+        // Event: Move Left
+        card.querySelector('.btn-move-left').addEventListener('click', () => {
+          if (index > 0) {
+            const temp = state.photos[index];
+            state.photos[index] = state.photos[index - 1];
+            state.photos[index - 1] = temp;
+            updateUI();
+          }
+        });
+
+        // Event: Move Right
+        card.querySelector('.btn-move-right').addEventListener('click', () => {
+          if (index < state.photos.length - 1) {
+            const temp = state.photos[index];
+            state.photos[index] = state.photos[index + 1];
+            state.photos[index + 1] = temp;
+            updateUI();
+          }
+        });
+
+        // Event: Rotate 90° Clockwise
+        card.querySelector('.btn-rotate').addEventListener('click', () => {
+          photo.rotation = (photo.rotation + 90) % 360;
+          updateUI();
+          showToast(`หมุนภาพที่ #${index + 1} เรียบร้อยแล้ว`, 'info');
+        });
+
+        // Event: Delete
+        card.querySelector('.btn-delete').addEventListener('click', () => {
+          if (window.confirm(`ต้องการลบภาพที่ #${index + 1} หรือไม่?`)) {
+            state.photos.splice(index, 1);
+            updateUI();
+            showToast('ลบรูปภาพเรียบร้อยแล้ว', 'info');
+          }
+        });
+
+        // Event: Tag Pill Toggle
+        card.querySelectorAll('.tag-pill').forEach(pill => {
+          pill.addEventListener('click', () => {
+            const tag = pill.getAttribute('data-tag');
+            toggleTagInPhotoCaption(photo, tag);
+            updateUI();
+          });
+        });
+
+        // Event: Caption Input Manual Edit
+        const captionInput = card.querySelector('.input-caption');
+        captionInput.addEventListener('input', (e) => {
+          photo.caption = e.target.value;
+          // Re-evaluate tag pills highlight in this card
+          const currentActive = getActiveTagsFromCaption(photo.caption);
+          card.querySelectorAll('.tag-pill').forEach(pill => {
+            const tag = pill.getAttribute('data-tag');
+            if (currentActive.includes(tag)) {
+              pill.className = 'tag-pill px-2.5 py-1 rounded-lg text-xs font-semibold border transition active:scale-95 bg-blue-600 text-white border-blue-600 shadow-xs';
+            } else {
+              pill.className = 'tag-pill px-2.5 py-1 rounded-lg text-xs font-semibold border transition active:scale-95 bg-slate-100 hover:bg-slate-200 text-slate-700 border-slate-200';
+            }
+          });
+          renderA4Pages();
+        });
+
+        photosGrid.appendChild(card);
+      });
+    }
+
+    // Helper: Determine which quick tags are present in a caption
+    function getActiveTagsFromCaption(caption) {
+      if (!caption) return [];
+      const parts = caption.split(/[,，\n]/).map(s => s.trim()).filter(Boolean);
+      return QUICK_TAG_OPTIONS.filter(tag => parts.includes(tag));
+    }
+
+    // Helper: Toggle quick tag inside caption
+    function toggleTagInPhotoCaption(photo, tag) {
+      let parts = photo.caption ? photo.caption.split(/[,，\n]/).map(s => s.trim()).filter(Boolean) : [];
+      const tagIndex = parts.indexOf(tag);
+
+      if (tagIndex >= 0) {
+        // Tag is active -> remove it
+        parts.splice(tagIndex, 1);
+      } else {
+        // Tag is inactive -> add it
+        parts.push(tag);
+      }
+
+      photo.caption = parts.join(', ');
+    }
+
+    // --- REQUIREMENT 4: CASCADING PER-PAGE A4 LAYOUT (200 DPI PORTRAIT) ---
+    // Paginate photos dynamically based on per-page quotas
+    function paginatePhotos() {
+      const pages = [];
+      let photoIdx = 0;
+      let pageIdx = 0;
+
+      while (photoIdx < state.photos.length) {
+        // Quota is 2 or 4 (default is 4)
+        const quota = state.pageLayouts[pageIdx] || 4;
+        const pagePhotos = state.photos.slice(photoIdx, photoIdx + quota);
+
+        pages.push({
+          pageIndex: pageIdx,
+          pageNumber: pageIdx + 1,
+          quota: quota,
+          photos: pagePhotos
+        });
+
+        photoIdx += quota;
+        pageIdx++;
+      }
+
+      return pages;
+    }
+
+    // Ensure Sarabun Google Font faces are completely loaded before Canvas drawing
+    async function ensureFontsLoaded() {
+      if (document.fonts) {
+        try {
+          await Promise.all([
+            document.fonts.load('400 28px "Sarabun"'),
+            document.fonts.load('700 46px "Sarabun"'),
+            document.fonts.load('400 24px "Sarabun"'),
+            document.fonts.load('500 24px "Sarabun"'),
+            document.fonts.load('500 26px "Sarabun"')
+          ]);
+          await document.fonts.ready;
+        } catch (e) {
+          console.warn('Font loading notice:', e);
+        }
+      }
+    }
+
+    // Render all A4 Pages with Canvas
+    async function renderA4Pages() {
+      await ensureFontsLoaded();
+
+      const pages = paginatePhotos();
+      pageCountBadge.textContent = pages.length;
+
+      // Update bottom export buttons state
+      const hasPages = pages.length > 0;
+      btnPrint.disabled = !hasPages;
+      btnExportJpg.disabled = !hasPages;
+      btnExportPdf.disabled = !hasPages;
+
+      footerSummaryText.textContent = `พร้อมส่งออก: ${state.photos.length} ภาพ (${pages.length} หน้า A4)`;
+
+      if (!hasPages) {
+        pagesContainer.innerHTML = `
+          <div class="bg-white rounded-2xl p-8 text-center border border-slate-200">
+            <p class="text-sm font-semibold text-slate-700">ไม่มีหน้าเอกสารตัวอย่าง</p>
+            <p class="text-xs text-slate-500 mt-1">เพิ่มรูปภาพด้านบนเพื่อเริ่มจัดหน้ารายงาน A4</p>
+          </div>
+        `;
+        state.renderedCanvases = [];
+        return;
+      }
+
+      pagesContainer.innerHTML = '';
+      state.renderedCanvases = [];
+
+      for (let i = 0; i < pages.length; i++) {
+        const page = pages[i];
+        const pageCard = document.createElement('div');
+        pageCard.className = 'bg-white rounded-2xl border border-slate-200 p-4 sm:p-6 shadow-sm space-y-4';
+
+        // Layout switcher buttons above each page preview
+        pageCard.innerHTML = `
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+            <div class="flex items-center space-x-2">
+              <span class="w-8 h-8 rounded-lg bg-blue-100 text-blue-800 font-bold text-sm flex items-center justify-center">
+                ${page.pageNumber}
+              </span>
+              <div>
+                <h3 class="text-sm sm:text-base font-bold text-slate-900">หน้า ${page.pageNumber} จาก ${pages.length}</h3>
+                <p class="text-xs text-slate-500">บรรจุ ${page.photos.length} รูป (ตามลำดับ)</p>
+              </div>
+            </div>
+
+            <!-- Independent Layout Switcher for this page -->
+            <div class="inline-flex rounded-xl p-1 bg-slate-100 border border-slate-200 self-start sm:self-auto">
+              <button type="button" data-quota="2" 
+                      class="btn-toggle-quota px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                        page.quota === 2 
+                          ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50' 
+                          : 'text-slate-600 hover:text-slate-900'
+                      }">
+                2 รูป/หน้า (ภาพใหญ่)
+              </button>
+              <button type="button" data-quota="4" 
+                      class="btn-toggle-quota px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                        page.quota === 4 
+                          ? 'bg-white text-blue-600 shadow-sm border border-slate-200/50' 
+                          : 'text-slate-600 hover:text-slate-900'
+                      }">
+                4 รูป/หน้า (มาตรฐาน)
+              </button>
+            </div>
+          </div>
+
+          <!-- A4 Page Canvas Preview Container -->
+          <div class="flex flex-col items-center">
+            <div class="relative w-full max-w-xl group cursor-zoom-in rounded-lg shadow-md hover:shadow-xl border border-slate-200 overflow-hidden bg-white transition duration-200 page-preview-click" data-page-idx="${i}">
+              <div class="canvas-placeholder w-full aspect-[1654/2339] bg-slate-50 flex items-center justify-center text-xs text-slate-400">
+                กำลังเรนเดอร์หน้ากระดาษ A4...
+              </div>
+              <div class="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center pointer-events-none">
+                <span class="opacity-0 group-hover:opacity-100 transition-opacity px-3 py-1.5 rounded-full bg-slate-900/80 backdrop-blur-xs text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg">
+                  <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7"></path></svg>
+                  แตะเพื่อตรวจสอบภาพขยายเต็มจอ
+                </span>
+              </div>
+            </div>
+            <p class="text-xs text-slate-400 mt-2 flex items-center gap-1">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+              แตะที่หน้ากระดาษเพื่อเปิด Fullscreen Lightbox ตรวจสอบความคมชัด 200 DPI
+            </p>
+          </div>
+        `;
+
+        // Event: Toggle Layout Quota
+        pageCard.querySelectorAll('.btn-toggle-quota').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const quota = parseInt(btn.getAttribute('data-quota'), 10);
+            state.pageLayouts[page.pageIndex] = quota;
+            renderA4Pages();
+          });
+        });
+
+        // Event: Click canvas preview to inspect in Fullscreen Lightbox
+        pageCard.querySelector('.page-preview-click').addEventListener('click', () => {
+          openLightbox(i);
+        });
+
+        pagesContainer.appendChild(pageCard);
+
+        // Render Canvas for this Page
+        const canvas = await generateA4Canvas(page, pages.length);
+        state.renderedCanvases[i] = canvas;
+
+        // Replace placeholder with rendered canvas
+        const placeholder = pageCard.querySelector('.canvas-placeholder');
+        if (placeholder) {
+          canvas.className = 'w-full h-auto block select-none pointer-events-none';
+          placeholder.replaceWith(canvas);
+        }
+      }
+    }
+
+    // Generate high-resolution 200 DPI A4 Canvas (1654 x 2339 px)
+    async function generateA4Canvas(pageData, totalPages) {
+      const canvas = document.createElement('canvas');
+      canvas.width = A4_WIDTH;
+      canvas.height = A4_HEIGHT;
+      const ctx = canvas.getContext('2d');
+
+      // Crisp White Background
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, A4_WIDTH, A4_HEIGHT);
+
+      // Margins
+      const marginX = 70;
+      const contentWidth = A4_WIDTH - (marginX * 2); // 1514 px
+
+      // --- HEADER RENDERING ---
+      // Line 1: ชื่องาน (Smaller, regular weight, ~28px Sarabun)
+      ctx.fillStyle = '#334155'; // Slate-700
+      ctx.font = '400 28px "Sarabun", sans-serif';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+      const projectNameText = `ชื่องาน: ${state.projectName || '-'}`;
+      ctx.fillText(projectNameText, marginX, 75);
+
+      // Top-right corner: หน้า Current/Total (~24px Sarabun)
+      ctx.fillStyle = '#64748b'; // Slate-500
+      ctx.font = '400 24px "Sarabun", sans-serif';
+      ctx.textAlign = 'right';
+      const pageNumberText = `หน้า ${pageData.pageNumber}/${totalPages}`;
+      ctx.fillText(pageNumberText, A4_WIDTH - marginX, 75);
+
+      // Line 2: เลขแปลงที่ดิน (Larger, bold, prominent, ~46px Sarabun)
+      ctx.fillStyle = '#0f172a'; // Slate-900
+      ctx.font = '700 46px "Sarabun", sans-serif';
+      ctx.textAlign = 'left';
+      const parcelNumberText = `เลขแปลงที่ดิน: ${state.parcelNumber || '-'}`;
+      ctx.fillText(parcelNumberText, marginX, 120);
+
+      // Clean horizontal divider line beneath header
+      const dividerY = 185;
+      ctx.strokeStyle = '#cbd5e1'; // Slate-300
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(marginX, dividerY);
+      ctx.lineTo(A4_WIDTH - marginX, dividerY);
+      ctx.stroke();
+
+      // --- PHOTO GRID RENDERING ---
+      const gridStartY = 210;
+      const gridBottomMargin = 60;
+      const gridTotalHeight = A4_HEIGHT - gridStartY - gridBottomMargin; // ~2069 px
+
+      const photos = pageData.photos;
+      const quota = pageData.quota;
+
+      if (quota === 2) {
+        // --- 2 PHOTOS PER PAGE: 1x2 Vertical Stack ---
+        const slotWidth = contentWidth; // 1514 px
+        const slotGapY = 40;
+        const slotHeight = (gridTotalHeight - slotGapY) / 2; // ~1014 px
+        const captionHeight = 65;
+        const photoFrameHeight = slotHeight - captionHeight; // ~949 px
+
+        for (let idx = 0; idx < photos.length; idx++) {
+          const photo = photos[idx];
+          const slotX = marginX;
+          const slotY = gridStartY + (idx * (slotHeight + slotGapY));
+
+          await drawPhotoInSlot(ctx, photo, slotX, slotY, slotWidth, photoFrameHeight, captionHeight, 26);
+        }
+      } else {
+        // --- 4 PHOTOS PER PAGE: 2x2 Grid ---
+        const gapX = 40;
+        const gapY = 40;
+        const slotWidth = (contentWidth - gapX) / 2; // 737 px
+        const slotHeight = (gridTotalHeight - gapY) / 2; // ~1014 px
+        const captionHeight = 65;
+        const photoFrameHeight = slotHeight - captionHeight; // ~949 px
+
+        for (let idx = 0; idx < photos.length; idx++) {
+          const photo = photos[idx];
+          const col = idx % 2;
+          const row = Math.floor(idx / 2);
+
+          const slotX = marginX + (col * (slotWidth + gapX));
+          const slotY = gridStartY + (row * (slotHeight + gapY));
+
+          await drawPhotoInSlot(ctx, photo, slotX, slotY, slotWidth, photoFrameHeight, captionHeight, 24);
+        }
+      }
+
+      return canvas;
+    }
+
+    // Helper: Draw single photo inside slot preserving aspect ratio & applying rotation
+    async function drawPhotoInSlot(ctx, photo, slotX, slotY, slotW, photoFrameH, captionH, captionFontSize) {
+      // 1. Draw subtle framing background
+      ctx.fillStyle = '#f8fafc';
+      ctx.fillRect(slotX, slotY, slotW, photoFrameH);
+
+      // 2. Load photo image
+      const img = await new Promise((resolve) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.src = photo.dataUrl;
+      });
+
+      // 3. Calculate aspect ratio taking rotation into account
+      const rot = photo.rotation % 360;
+      const is90or270 = rot === 90 || rot === 270;
+      const effectiveW = is90or270 ? img.naturalHeight : img.naturalWidth;
+      const effectiveH = is90or270 ? img.naturalWidth : img.naturalHeight;
+
+      // Fit inside photoFrameH x slotW (padding 6px)
+      const pad = 6;
+      const maxDrawW = slotW - (pad * 2);
+      const maxDrawH = photoFrameH - (pad * 2);
+      const scale = Math.min(maxDrawW / effectiveW, maxDrawH / effectiveH);
+
+      const drawEffectiveW = effectiveW * scale;
+      const drawEffectiveH = effectiveH * scale;
+
+      const centerX = slotX + (slotW / 2);
+      const centerY = slotY + (photoFrameH / 2);
+
+      // 4. Render photo with rotation
+      ctx.save();
+      ctx.translate(centerX, centerY);
+      ctx.rotate((rot * Math.PI) / 180);
+
+      // Draw image centered around 0,0
+      const origDrawW = (is90or270 ? drawEffectiveH : drawEffectiveW);
+      const origDrawH = (is90or270 ? drawEffectiveW : drawEffectiveH);
+
+      ctx.drawImage(img, -origDrawW / 2, -origDrawH / 2, origDrawW, origDrawH);
+      ctx.restore();
+
+      // Draw crisp 1px border around photo frame
+      ctx.strokeStyle = '#e2e8f0';
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(slotX, slotY, slotW, photoFrameH);
+
+      // 5. Render Caption centered below photo (Support 1 or 2 lines neatly)
+      if (photo.caption && photo.caption.trim()) {
+        ctx.fillStyle = '#1e293b'; // Slate-800
+        ctx.font = `500 ${captionFontSize}px "Sarabun", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        const captionY = slotY + photoFrameH + (captionH / 2);
+        const captionText = photo.caption.trim();
+        const maxTextWidth = slotW - 24;
+
+        if (ctx.measureText(captionText).width <= maxTextWidth) {
+          ctx.fillText(captionText, slotX + (slotW / 2), captionY);
+        } else {
+          // If long, split into 2 lines smoothly
+          const tokens = captionText.split(/([, ])/);
+          let line1 = '';
+          let line2 = '';
+          for (let token of tokens) {
+            if (ctx.measureText(line1 + token).width <= maxTextWidth && line2 === '') {
+              line1 += token;
+            } else {
+              line2 += token;
+            }
+          }
+          line1 = line1.trim();
+          line2 = line2.trim();
+
+          // Truncate line 2 with ellipsis if needed
+          if (ctx.measureText(line2).width > maxTextWidth) {
+            while (line2.length > 3 && ctx.measureText(line2 + '...').width > maxTextWidth) {
+              line2 = line2.substring(0, line2.length - 1);
+            }
+            line2 += '...';
+          }
+
+          const lineOffset = Math.round(captionFontSize * 0.58);
+          ctx.fillText(line1, slotX + (slotW / 2), captionY - lineOffset);
+          ctx.fillText(line2, slotX + (slotW / 2), captionY + lineOffset);
+        }
+      }
+    }
+
+    // --- REQUIREMENT 5: LIVE PREVIEW & FULLSCREEN PAGE INSPECTION (LIGHTBOX) ---
+    function setupLightbox() {
+      // Close Lightbox
+      btnLightboxClose.addEventListener('click', closeLightbox);
+      lightboxCanvasWrapper.addEventListener('click', (e) => {
+        if (e.target === lightboxCanvasWrapper) closeLightbox();
+      });
+
+      // Keyboard navigation for lightbox
+      window.addEventListener('keydown', (e) => {
+        if (!lightboxModal.classList.contains('hidden')) {
+          if (e.key === 'Escape') closeLightbox();
+          if (e.key === 'ArrowLeft') showLightboxPage(state.lightboxPageIndex - 1);
+          if (e.key === 'ArrowRight') showLightboxPage(state.lightboxPageIndex + 1);
+        }
+      });
+
+      // Prev / Next Page Buttons
+      btnLightboxPrev.addEventListener('click', () => {
+        showLightboxPage(state.lightboxPageIndex - 1);
+      });
+      btnLightboxNext.addEventListener('click', () => {
+        showLightboxPage(state.lightboxPageIndex + 1);
+      });
+
+      // Zoom Controls
+      btnZoomIn.addEventListener('click', () => setLightboxZoom(state.lightboxZoom + 0.25));
+      btnZoomOut.addEventListener('click', () => setLightboxZoom(Math.max(0.25, state.lightboxZoom - 0.25)));
+      btnZoomReset.addEventListener('click', () => setLightboxZoom(1.0));
+    }
+
+    function openLightbox(pageIndex) {
+      if (!state.renderedCanvases || state.renderedCanvases.length === 0) return;
+      state.lightboxZoom = 1.0;
+      lightboxModal.classList.remove('hidden');
+      requestAnimationFrame(() => {
+        lightboxModal.classList.remove('opacity-0');
+      });
+      showLightboxPage(pageIndex);
+    }
+
+    function closeLightbox() {
+      lightboxModal.classList.add('opacity-0');
+      setTimeout(() => {
+        lightboxModal.classList.add('hidden');
+      }, 200);
+    }
+
+    function showLightboxPage(pageIndex) {
+      const total = state.renderedCanvases.length;
+      if (pageIndex < 0 || pageIndex >= total) return;
+
+      state.lightboxPageIndex = pageIndex;
+      lightboxPageTitle.textContent = `หน้า ${pageIndex + 1} จาก ${total}`;
+      lightboxSubTitle.textContent = `แปลงที่ดิน: ${state.parcelNumber || 'ไม่ระบุ'}`;
+
+      btnLightboxPrev.disabled = pageIndex === 0;
+      btnLightboxNext.disabled = pageIndex === total - 1;
+
+      const canvas = state.renderedCanvases[pageIndex];
+      lightboxImg.src = canvas.toDataURL('image/jpeg', 0.92);
+      setLightboxZoom(1.0);
+    }
+
+    function setLightboxZoom(zoom) {
+      state.lightboxZoom = Math.min(3.0, Math.max(0.3, zoom));
+      zoomLevelText.textContent = `${Math.round(state.lightboxZoom * 100)}%`;
+      lightboxImg.style.width = `${state.lightboxZoom * 700}px`;
+    }
+
+    // --- REQUIREMENT 6: FILENAME CONFIRMATION MODAL & EXPORT (PDF/JPG/PRINT) ---
+    function setupExportHandlers() {
+      // Direct Print Button
+      btnPrint.addEventListener('click', () => {
+        if (!state.renderedCanvases || state.renderedCanvases.length === 0) {
+          showToast('ไม่มีหน้าเอกสารสำหรับพิมพ์', 'warning');
+          return;
+        }
+
+        // Populate print container with high-res JPEG images of each canvas
+        printContainer.innerHTML = '';
+        state.renderedCanvases.forEach((canvas) => {
+          const pageWrapper = document.createElement('div');
+          pageWrapper.className = 'print-page-wrapper';
+          const img = document.createElement('img');
+          img.src = canvas.toDataURL('image/jpeg', 0.95);
+          pageWrapper.appendChild(img);
+          printContainer.appendChild(pageWrapper);
+        });
+
+        window.print();
+      });
+
+      // Download PDF Button -> Open Confirmation Modal
+      btnExportPdf.addEventListener('click', () => {
+        openFilenameModal('pdf');
+      });
+
+      // Download JPG Button -> Open Confirmation Modal
+      btnExportJpg.addEventListener('click', () => {
+        openFilenameModal('jpg');
+      });
+
+      // Modal Controls
+      btnCloseModal.addEventListener('click', closeFilenameModal);
+      btnCancelModal.addEventListener('click', closeFilenameModal);
+
+      // Confirm Export Button
+      btnConfirmExport.addEventListener('click', async () => {
+        const rawName = exportFilenameInput.value.trim();
+        const sanitizedName = sanitizeFilename(rawName) || 'รูปภาพแปลง_ไม่ระบุ';
+
+        setExportLoading(true);
+
+        try {
+          if (state.currentModalType === 'pdf') {
+            await executePdfExport(sanitizedName);
+          } else if (state.currentModalType === 'jpg') {
+            await executeJpgExport(sanitizedName);
+          }
+          closeFilenameModal();
+        } catch (err) {
+          console.error('Export error:', err);
+          showToast('เกิดข้อผิดพลาดขณะส่งออกไฟล์', 'error');
+        } finally {
+          setExportLoading(false);
+        }
+      });
+    }
+
+    // Sanitize filename: replace invalid chars / \ : * ? " < > | with -
+    function sanitizeFilename(filename) {
+      if (!filename) return '';
+      return filename.replace(/[/\\:*?"<>|]/g, '-').trim();
+    }
+
+    // Compute default filename: รูปภาพแปลง_[เลขแปลงที่ดิน] (Strictly NO Project Name)
+    function computeDefaultFilename() {
+      const parcel = (state.parcelNumber || '').trim();
+      if (!parcel) {
+        return 'รูปภาพแปลง_ไม่ระบุ';
+      }
+      return `รูปภาพแปลง_${sanitizeFilename(parcel)}`;
+    }
+
+    function openFilenameModal(type) {
+      state.currentModalType = type;
+      const defaultName = computeDefaultFilename();
+      exportFilenameInput.value = defaultName;
+
+      const totalPages = state.renderedCanvases.length;
+      modalPagesInfo.textContent = `${totalPages} หน้า (A4 200 DPI)`;
+      modalPhotosInfo.textContent = `${state.photos.length} รูป`;
+
+      if (type === 'pdf') {
+        modalTitle.innerHTML = `
+          <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+          ยืนยันชื่อไฟล์เอกสาร PDF
+        `;
+        exportExtBadge.textContent = '.pdf';
+        // Estimate PDF size: ~900KB per page
+        const estBytes = totalPages * 900 * 1024;
+        modalFilesizeEstimate.textContent = `~${formatBytes(estBytes)}`;
+      } else {
+        modalTitle.innerHTML = `
+          <svg class="w-5 h-5 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+          ยืนยันชื่อไฟล์รูปภาพ JPG
+        `;
+        exportExtBadge.textContent = totalPages > 1 ? '.zip' : '.jpg';
+        // Estimate JPG/ZIP size: ~1.2MB per page
+        const estBytes = totalPages * 1.2 * 1024 * 1024;
+        modalFilesizeEstimate.textContent = `~${formatBytes(estBytes)} ${totalPages > 1 ? '(รวมใน ZIP)' : ''}`;
+      }
+
+      filenameModal.classList.remove('hidden');
+      requestAnimationFrame(() => {
+        filenameModal.classList.remove('opacity-0');
+        filenameModalCard.classList.remove('scale-95');
+      });
+      exportFilenameInput.focus();
+    }
+
+    function closeFilenameModal() {
+      filenameModal.classList.add('opacity-0');
+      filenameModalCard.classList.add('scale-95');
+      setTimeout(() => {
+        filenameModal.classList.add('hidden');
+      }, 200);
+    }
+
+    function setExportLoading(loading) {
+      if (loading) {
+        btnConfirmExport.disabled = true;
+        confirmExportText.textContent = 'กำลังประมวลผลไฟล์...';
+        confirmExportSpinner.classList.remove('hidden');
+      } else {
+        btnConfirmExport.disabled = false;
+        confirmExportText.textContent = 'ยืนยันดาวน์โหลด';
+        confirmExportSpinner.classList.add('hidden');
+      }
+    }
+
+    // Execute Multi-page PDF Export with jsPDF
+    async function executePdfExport(filename) {
+      if (!window.jspdf || !window.jspdf.jsPDF) {
+        showToast('ไม่พบไลบรารี jsPDF กรุณาตรวจสอบอินเทอร์เน็ต', 'error');
+        return;
+      }
+
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+        compress: true
+      });
+
+      const total = state.renderedCanvases.length;
+      for (let i = 0; i < total; i++) {
+        if (i > 0) {
+          pdf.addPage('a4', 'portrait');
+        }
+        const imgData = state.renderedCanvases[i].toDataURL('image/jpeg', 0.88);
+        // A4 mm dimensions: 210 x 297 mm
+        pdf.addImage(imgData, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+      }
+
+      pdf.save(`${filename}.pdf`);
+      showToast(`ดาวน์โหลดไฟล์ ${filename}.pdf สำเร็จ`, 'success');
+    }
+
+    // Execute JPG Export (Single JPG or Multi-page JSZip)
+    async function executeJpgExport(filename) {
+      const total = state.renderedCanvases.length;
+
+      if (total === 1) {
+        // Single page -> direct JPG download
+        const blob = await new Promise(resolve => state.renderedCanvases[0].toBlob(resolve, 'image/jpeg', 0.90));
+        downloadBlob(blob, `${filename}.jpg`);
+        showToast(`ดาวน์โหลดไฟล์ ${filename}.jpg สำเร็จ`, 'success');
+      } else {
+        // Multi-page -> Bundle into ZIP with JSZip
+        if (!window.JSZip) {
+          showToast('ไม่พบไลบรารี JSZip กรุณาตรวจสอบอินเทอร์เน็ต', 'error');
+          return;
+        }
+
+        const zip = new JSZip();
+        for (let i = 0; i < total; i++) {
+          const blob = await new Promise(resolve => state.renderedCanvases[i].toBlob(resolve, 'image/jpeg', 0.90));
+          const pageFileName = `${filename}_หน้า${i + 1}.jpg`;
+          zip.file(pageFileName, blob);
+        }
+
+        const zipBlob = await zip.generateAsync({ type: 'blob' });
+        downloadBlob(zipBlob, `${filename}.zip`);
+        showToast(`ดาวน์โหลดไฟล์ ${filename}.zip สำเร็จ (${total} หน้า)`, 'success');
+      }
+    }
+
+    // Trigger browser file download via Blob URL
+    function downloadBlob(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
+    // HTML escape utility
+    function escapeHtml(text) {
+      if (!text) return '';
+      return String(text)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
+    // Global UI update orchestrator
+    function updateUI() {
+      updateCompressionBadge();
+      renderPhotoCards();
+      renderA4Pages();
+    }
+
+    // --- APPLICATION BOOTSTRAP ---
+    window.addEventListener('DOMContentLoaded', () => {
+      initLocalStorage();
+      setupFileUpload();
+      setupPhotoSort();
+      setupLightbox();
+      setupExportHandlers();
+      updateUI();
+    });
+  </script>
+</body>
+</html>
