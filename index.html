@@ -36,11 +36,14 @@
   </script>
 
   <!-- External CDNs -->
-  <!-- exifr for silent EXIF timestamp parsing -->
+  <!-- Leaflet CSS & JS for Interactive GPS Map -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <!-- exifr for silent EXIF timestamp & GPS parsing -->
   <script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/full.umd.js"></script>
   <!-- jsPDF for A4 PDF export -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-  <!-- JSZip for multi-page JPG bundling -->
+  <!-- JSZip for multi-page JPG bundling & Shapefile ZIP packaging -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
   <style>
@@ -48,6 +51,21 @@
       font-family: 'Sarabun', sans-serif;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* Leaflet + Tailwind CSS compatibility */
+    .leaflet-container img {
+      max-width: none !important;
+    }
+    .leaflet-pane {
+      z-index: 10 !important;
+    }
+    .leaflet-top, .leaflet-bottom {
+      z-index: 20 !important;
+    }
+    .gis-marker-pin {
+      background: transparent !important;
+      border: none !important;
     }
 
     /* Print Styles: A4 Portrait Exact Fit */
@@ -296,7 +314,51 @@
       </div>
     </section>
 
-    <!-- SECTION 4: A4 PAGE PREVIEW & CASCADING LAYOUT -->
+    <!-- SECTION 4: GPS MAP VIEWER & GIS EXPORT -->
+    <section id="map-section" class="bg-white rounded-2xl p-4 sm:p-6 shadow-sm border border-slate-200 space-y-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+        <div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <div class="w-8 h-8 rounded-lg bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 20l-5.447-2.724A1 1 0 013 16.382V5.618a1 1 0 011.447-.894L9 7m0 13l6-3m-6 3V7m6 10l4.553 2.276A1 1 0 0021 18.382V7.618a1 1 0 00-.553-.894L15 4m0 13V4m0 0L9 7"></path></svg>
+            </div>
+            <h2 class="text-base sm:text-lg font-bold text-slate-900">
+              แผนที่ตำแหน่งภาพถ่ายสำรวจ (GPS Map)
+            </h2>
+            <span id="map-geotag-count" class="px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+              พบพิกัด 0 จาก 0 ภาพ
+            </span>
+          </div>
+          <p class="text-xs text-slate-500 mt-1">แสดงตำแหน่งภาพถ่ายจากค่า EXIF GPS พร้อมสลับแผนที่ดาวเทียม และส่งออกข้อมูล GIS (KML & Shapefile)</p>
+        </div>
+
+        <!-- GIS Export Buttons in Map Header -->
+        <div class="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+          <button id="btn-export-kml" type="button" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs sm:text-sm font-semibold transition active:scale-95 disabled:opacity-40 disabled:pointer-events-none" disabled>
+            <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+            ดาวน์โหลด KML
+          </button>
+          <button id="btn-export-shp" type="button" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-300 text-xs sm:text-sm font-semibold transition active:scale-95 disabled:opacity-40 disabled:pointer-events-none" disabled>
+            <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+            ดาวน์โหลด SHP
+          </button>
+        </div>
+      </div>
+
+      <!-- Map Container & Empty State -->
+      <div class="relative w-full h-[400px] sm:h-[460px] rounded-xl overflow-hidden border border-slate-200 shadow-inner bg-slate-100">
+        <div id="survey-map" class="w-full h-full z-10"></div>
+        <div id="map-empty-overlay" class="absolute inset-0 z-20 bg-slate-50/90 backdrop-blur-xs flex flex-col items-center justify-center p-6 text-center">
+          <div class="w-12 h-12 rounded-full bg-slate-200 text-slate-500 flex items-center justify-center mb-2">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+          </div>
+          <p class="text-sm font-bold text-slate-700">ไม่พบรูปภาพที่มีพิกัด GPS</p>
+          <p class="text-xs text-slate-500 max-w-sm mt-1">รูปภาพที่อัปโหลดไม่มีข้อมูลพิกัดดาวเทียม (EXIF GPS) หรือยังไม่ได้เลือกรูปภาพ (กรุณาเปิด Location ในแอปกล้องก่อนถ่ายภาพ)</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- SECTION 5: A4 PAGE PREVIEW & CASCADING LAYOUT -->
     <section id="pages-preview-section" class="space-y-4 pt-2">
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <div>
@@ -333,6 +395,18 @@
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z"></path>
           </svg>
           สั่งพิมพ์ทันที
+        </button>
+
+        <!-- Download KML (Quick Footer) -->
+        <button id="btn-footer-kml" type="button" class="hidden sm:inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-300 font-semibold text-xs sm:text-sm shadow-sm transition active:scale-95 disabled:opacity-40 disabled:pointer-events-none" disabled title="ส่งออกข้อมูลพิกัด KML">
+          <svg class="w-4 h-4 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+          KML
+        </button>
+
+        <!-- Download SHP (Quick Footer) -->
+        <button id="btn-footer-shp" type="button" class="hidden sm:inline-flex items-center justify-center gap-1.5 px-3 py-2.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-300 font-semibold text-xs sm:text-sm shadow-sm transition active:scale-95 disabled:opacity-40 disabled:pointer-events-none" disabled title="ส่งออก Shapefile (ZIP)">
+          <svg class="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
+          SHP
         </button>
 
         <!-- Download JPG Button -->
@@ -619,6 +693,7 @@
           saveIndicatorProject.classList.add('opacity-0');
         }, 1200);
         renderA4Pages();
+        updateMap();
       });
 
       let timeoutParcel = null;
@@ -631,6 +706,7 @@
           saveIndicatorParcel.classList.add('opacity-0');
         }, 1200);
         renderA4Pages();
+        updateMap();
       });
 
       // Prominent Button: "เริ่มแปลงถัดไป (คงชื่องานเดิม)"
@@ -739,17 +815,31 @@
     async function compressSingleImage(file) {
       const originalSize = file.size;
       let timestamp = null;
+      let gps = null;
 
-      // 1. Silent EXIF reading (exifr): DO NOT put into caption!
+      // 1. Silent EXIF extraction (timestamp & GPS): DO NOT put into caption!
       try {
-        if (window.exifr && typeof window.exifr.parse === 'function') {
-          const exifData = await window.exifr.parse(file, ['DateTimeOriginal']);
-          if (exifData && exifData.DateTimeOriginal) {
-            timestamp = new Date(exifData.DateTimeOriginal);
+        if (window.exifr) {
+          // Extract GPS coordinates in decimal degrees if available
+          if (typeof window.exifr.gps === 'function') {
+            const loc = await window.exifr.gps(file);
+            if (loc && typeof loc.latitude === 'number' && typeof loc.longitude === 'number' && !isNaN(loc.latitude) && !isNaN(loc.longitude)) {
+              gps = {
+                lat: loc.latitude,
+                lon: loc.longitude
+              };
+            }
+          }
+          // Extract timestamp strictly for chronological sorting
+          if (typeof window.exifr.parse === 'function') {
+            const exifData = await window.exifr.parse(file, ['DateTimeOriginal']);
+            if (exifData && exifData.DateTimeOriginal) {
+              timestamp = new Date(exifData.DateTimeOriginal);
+            }
           }
         }
       } catch (exifErr) {
-        // Fallback silently if EXIF read fails
+        console.warn('Silent EXIF extraction notice:', exifErr);
       }
 
       // Fallback timestamp to file.lastModified strictly for chronological sorting
@@ -813,7 +903,8 @@
         rotation: 0, // 0, 90, 180, 270
         caption: '', // Caption starts completely empty
         width: targetW,
-        height: targetH
+        height: targetH,
+        gps: gps // { lat, lon } or null
       };
     }
 
@@ -877,10 +968,24 @@
 
         card.innerHTML = `
           <!-- Card Header & Ordering -->
-          <div class="flex items-center justify-between">
-            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
-              ภาพที่ #${index + 1}
-            </span>
+          <div class="flex items-center justify-between gap-2 flex-wrap">
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                ภาพที่ #${index + 1}
+              </span>
+              ${photo.gps ? `
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200 cursor-help" 
+                      title="พิกัด: ${photo.gps.lat.toFixed(6)}, ${photo.gps.lon.toFixed(6)}">
+                  <svg class="w-3 h-3 text-emerald-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 11a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                  มีพิกัด GPS (${photo.gps.lat.toFixed(4)}, ${photo.gps.lon.toFixed(4)})
+                </span>
+              ` : `
+                <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-500 border border-slate-200" title="รูปนี้ไม่มีข้อมูลพิกัดดาวเทียม (EXIF GPS)">
+                  <svg class="w-3 h-3 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
+                  ไม่มีพิกัด GPS
+                </span>
+              `}
+            </div>
             <div class="flex items-center space-x-1">
               <!-- Move Left (⬅️) -->
               <button type="button" class="btn-move-left p-1.5 rounded-lg text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:pointer-events-none transition" 
@@ -1005,6 +1110,7 @@
             }
           });
           renderA4Pages();
+          updateMap();
         });
 
         photosGrid.appendChild(card);
@@ -1663,10 +1769,449 @@
         .replace(/'/g, '&#039;');
     }
 
+    // --- HELPER: ESCAPE XML FOR KML ---
+    function escapeXml(unsafe) {
+      if (unsafe === null || unsafe === undefined) return '';
+      return String(unsafe).replace(/[<>&'"]/g, c => {
+        switch (c) {
+          case '<': return '&lt;';
+          case '>': return '&gt;';
+          case '&': return '&amp;';
+          case '\'': return '&apos;';
+          case '"': return '&quot;';
+        }
+      });
+    }
+
+    // --- REQUIREMENT 2: DYNAMIC GIS LABEL (CONCATENATED WITHOUT SPACE) ---
+    function getGisLabel(photo) {
+      const caption = (photo.caption || '').trim();
+      const parcel = (state.parcelNumber || '').trim();
+      if (caption && parcel) {
+        return `${caption}${parcel}`;
+      }
+      if (parcel) {
+        return parcel;
+      }
+      if (caption) {
+        return caption;
+      }
+      return 'ไม่ระบุ';
+    }
+
+    // --- HELPER: SANITIZED GIS EXPORT FILENAME ---
+    function getGisExportFilename() {
+      const parcel = (state.parcelNumber || '').trim();
+      if (!parcel) return 'ไม่ระบุ';
+      return sanitizeFilename(parcel) || 'ไม่ระบุ';
+    }
+
+    // --- REQUIREMENT 3: LEAFLET INTERACTIVE MAP ---
+    let mapInstance = null;
+    let markersLayerGroup = null;
+    let esriSatelliteLayer = null;
+    let osmRoadsLayer = null;
+
+    function initMap() {
+      if (mapInstance) return;
+      const mapEl = document.getElementById('survey-map');
+      if (!mapEl || !window.L) return;
+
+      // Default Center: Thailand
+      mapInstance = L.map('survey-map', {
+        center: [13.736717, 100.523186],
+        zoom: 6,
+        zoomControl: true
+      });
+
+      esriSatelliteLayer = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+        maxZoom: 19
+      });
+
+      osmRoadsLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; OpenStreetMap contributors',
+        maxZoom: 19
+      });
+
+      // Default Basemap: Satellite
+      esriSatelliteLayer.addTo(mapInstance);
+
+      const baseMaps = {
+        "ภาพถ่ายดาวเทียม (Esri World Imagery)": esriSatelliteLayer,
+        "แผนที่ถนน (OpenStreetMap)": osmRoadsLayer
+      };
+
+      L.control.layers(baseMaps, null, { position: 'topright' }).addTo(mapInstance);
+
+      markersLayerGroup = L.layerGroup().addTo(mapInstance);
+    }
+
+    function updateMap() {
+      if (!window.L) return;
+      if (!mapInstance) initMap();
+      if (!mapInstance || !markersLayerGroup) return;
+
+      markersLayerGroup.clearLayers();
+
+      const geotagged = state.photos
+        .map((p, idx) => ({ photo: p, index: idx }))
+        .filter(item => item.photo.gps && typeof item.photo.gps.lat === 'number' && typeof item.photo.gps.lon === 'number');
+
+      const totalPhotos = state.photos.length;
+      const geoCount = geotagged.length;
+
+      const countBadge = document.getElementById('map-geotag-count');
+      const emptyOverlay = document.getElementById('map-empty-overlay');
+      const btnKml = document.getElementById('btn-export-kml');
+      const btnShp = document.getElementById('btn-export-shp');
+      const btnFootKml = document.getElementById('btn-footer-kml');
+      const btnFootShp = document.getElementById('btn-footer-shp');
+
+      if (countBadge) countBadge.textContent = `พบพิกัด ${geoCount} จาก ${totalPhotos} ภาพ`;
+      if (btnKml) btnKml.disabled = geoCount === 0;
+      if (btnShp) btnShp.disabled = geoCount === 0;
+      if (btnFootKml) btnFootKml.disabled = geoCount === 0;
+      if (btnFootShp) btnFootShp.disabled = geoCount === 0;
+
+      if (geoCount === 0) {
+        if (emptyOverlay) emptyOverlay.classList.remove('hidden');
+        return;
+      }
+
+      if (emptyOverlay) emptyOverlay.classList.add('hidden');
+
+      const bounds = [];
+
+      geotagged.forEach(({ photo, index }) => {
+        const lat = photo.gps.lat;
+        const lon = photo.gps.lon;
+        bounds.push([lat, lon]);
+
+        const label = getGisLabel(photo);
+
+        const icon = L.divIcon({
+          className: 'gis-marker-pin',
+          html: `
+            <div class="flex flex-col items-center -translate-x-1/2 -translate-y-full cursor-pointer select-none">
+              <div class="px-2 py-0.5 rounded-md bg-slate-900/95 text-white text-[11px] font-bold shadow-lg whitespace-nowrap border border-white/60 mb-0.5 max-w-[150px] truncate">
+                ${escapeHtml(label)}
+              </div>
+              <div class="w-8 h-8 rounded-full bg-blue-600 border-2 border-white shadow-xl flex items-center justify-center text-white font-bold text-xs ring-2 ring-blue-500/30">
+                ${index + 1}
+              </div>
+              <div class="w-2.5 h-2.5 bg-blue-600 rotate-45 -mt-1.5 shadow-md"></div>
+            </div>
+          `,
+          iconSize: [32, 48],
+          iconAnchor: [16, 48],
+          popupAnchor: [0, -48]
+        });
+
+        const marker = L.marker([lat, lon], { icon: icon });
+
+        const popupHtml = `
+          <div class="font-sans text-slate-800 p-1" style="min-width: 190px;">
+            <div class="font-bold text-sm text-blue-700 pb-1 border-b border-slate-200 mb-1.5 flex items-center justify-between">
+              <span class="truncate max-w-[150px]">${escapeHtml(label)}</span>
+              <span class="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded font-bold">#${index + 1}</span>
+            </div>
+            <div class="w-full h-28 bg-slate-100 rounded-lg overflow-hidden mb-2 flex items-center justify-center border border-slate-200">
+              <img src="${photo.dataUrl}" class="max-h-full max-w-full object-contain" alt="Survey Photo">
+            </div>
+            <div class="text-xs space-y-1 text-slate-600">
+              <div><strong>ชื่องาน:</strong> ${escapeHtml(state.projectName || '-')}</div>
+              <div><strong>เลขแปลง:</strong> ${escapeHtml(state.parcelNumber || '-')}</div>
+              <div><strong>คำอธิบาย:</strong> ${escapeHtml(photo.caption || '-')}</div>
+              <div class="text-[11px] font-mono text-slate-500 pt-1 border-t border-slate-100">
+                Lat: ${lat.toFixed(6)}<br>
+                Lon: ${lon.toFixed(6)}
+              </div>
+            </div>
+          </div>
+        `;
+
+        marker.bindPopup(popupHtml, { maxWidth: 260 });
+        marker.bindTooltip(label, { direction: 'top', offset: [0, -48] });
+
+        markersLayerGroup.addLayer(marker);
+      });
+
+      if (bounds.length > 0) {
+        mapInstance.fitBounds(bounds, { padding: [50, 50], maxZoom: 18 });
+      }
+
+      requestAnimationFrame(() => {
+        if (mapInstance) mapInstance.invalidateSize();
+      });
+    }
+
+    // --- REQUIREMENT 4: KML GENERATION ---
+    function generateKmlString(geotaggedItems) {
+      const docName = getGisExportFilename();
+      const placemarks = geotaggedItems.map(({ photo, index }) => {
+        const label = getGisLabel(photo);
+        const lat = photo.gps.lat;
+        const lon = photo.gps.lon;
+        const photoNo = index + 1;
+        const projectName = state.projectName || '-';
+        const parcelNo = state.parcelNumber || '-';
+        const caption = photo.caption || '-';
+
+        return `    <Placemark>
+      <name>${escapeXml(label)}</name>
+      <description><![CDATA[
+        <p><strong>ชื่องาน:</strong> ${escapeXml(projectName)}</p>
+        <p><strong>เลขแปลงที่ดิน:</strong> ${escapeXml(parcelNo)}</p>
+        <p><strong>ภาพที่:</strong> #${photoNo}</p>
+        <p><strong>คำอธิบาย:</strong> ${escapeXml(caption)}</p>
+        <p><strong>พิกัด (Lat, Lon):</strong> ${lat.toFixed(6)}, ${lon.toFixed(6)}</p>
+      ]]></description>
+      <Point>
+        <coordinates>${lon.toFixed(7)},${lat.toFixed(7)},0</coordinates>
+      </Point>
+    </Placemark>`;
+      }).join('\n');
+
+      return `<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>${escapeXml(docName)}</name>
+    <description>${escapeXml(state.projectName || '')}</description>
+${placemarks}
+  </Document>
+</kml>`;
+    }
+
+    // --- REQUIREMENT 4: PURE JS POINT SHAPEFILE WRITER (WGS 84 / THAI UTF-8) ---
+    const WGS84_PRJ = 'GEOGCS["GCS_WGS_1984",DATUM["D_WGS_1984",SPHEROID["WGS_1984",6378137.0,298.257223563]],PRIMEM["Greenwich",0.0],UNIT["Degree",0.0174532925199433]]';
+    const UTF8_CPG = 'UTF-8';
+
+    function createShpBuffer(points) {
+      const N = points.length;
+      const buffer = new ArrayBuffer(100 + N * 28);
+      const view = new DataView(buffer);
+
+      let minX = points[0].lon, maxX = points[0].lon;
+      let minY = points[0].lat, maxY = points[0].lat;
+      for (let i = 1; i < N; i++) {
+        const p = points[i];
+        if (p.lon < minX) minX = p.lon;
+        if (p.lon > maxX) maxX = p.lon;
+        if (p.lat < minY) minY = p.lat;
+        if (p.lat > maxY) maxY = p.lat;
+      }
+
+      view.setUint32(0, 9994, false); // File Code (Big Endian)
+      view.setUint32(24, 50 + N * 14, false); // File Length in words (Big Endian)
+      view.setInt32(28, 1000, true); // Version (Little Endian)
+      view.setInt32(32, 1, true); // Shape Type 1 = Point (Little Endian)
+      view.setFloat64(36, minX, true);
+      view.setFloat64(44, minY, true);
+      view.setFloat64(52, maxX, true);
+      view.setFloat64(60, maxY, true);
+
+      for (let i = 0; i < N; i++) {
+        const recOffset = 100 + i * 28;
+        view.setInt32(recOffset, i + 1, false); // Record # (1-based, Big Endian)
+        view.setInt32(recOffset + 4, 10, false); // Content Length in words = 10 (Big Endian)
+        view.setInt32(recOffset + 8, 1, true); // Shape Type = 1 (Little Endian)
+        view.setFloat64(recOffset + 12, points[i].lon, true); // X (Little Endian)
+        view.setFloat64(recOffset + 20, points[i].lat, true); // Y (Little Endian)
+      }
+
+      return buffer;
+    }
+
+    function createShxBuffer(points) {
+      const N = points.length;
+      const buffer = new ArrayBuffer(100 + N * 8);
+      const view = new DataView(buffer);
+
+      let minX = points[0].lon, maxX = points[0].lon;
+      let minY = points[0].lat, maxY = points[0].lat;
+      for (let i = 1; i < N; i++) {
+        const p = points[i];
+        if (p.lon < minX) minX = p.lon;
+        if (p.lon > maxX) maxX = p.lon;
+        if (p.lat < minY) minY = p.lat;
+        if (p.lat > maxY) maxY = p.lat;
+      }
+
+      view.setUint32(0, 9994, false);
+      view.setUint32(24, 50 + N * 4, false); // Length in words
+      view.setInt32(28, 1000, true);
+      view.setInt32(32, 1, true);
+      view.setFloat64(36, minX, true);
+      view.setFloat64(44, minY, true);
+      view.setFloat64(52, maxX, true);
+      view.setFloat64(60, maxY, true);
+
+      for (let i = 0; i < N; i++) {
+        const recOffset = 100 + i * 8;
+        view.setInt32(recOffset, 50 + i * 14, false); // Record Offset in words (Big Endian)
+        view.setInt32(recOffset + 4, 10, false); // Content Length in words = 10 (Big Endian)
+      }
+
+      return buffer;
+    }
+
+    function createDbfBuffer(points) {
+      const N = points.length;
+      const fields = [
+        { name: 'LABEL', len: 100 },
+        { name: 'PARCEL', len: 40 },
+        { name: 'CATEGORY', len: 80 },
+        { name: 'PROJECT', len: 100 },
+        { name: 'PHOTO_NO', len: 10 },
+        { name: 'LAT', len: 20 },
+        { name: 'LON', len: 20 }
+      ];
+
+      const headerLen = 32 + 32 * fields.length + 1; // 257 bytes
+      const recLen = 1 + fields.reduce((sum, f) => sum + f.len, 0); // 371 bytes
+      const totalLen = headerLen + N * recLen + 1; // +1 EOF byte (0x1A)
+
+      const buffer = new ArrayBuffer(totalLen);
+      const view = new DataView(buffer);
+      const uint8 = new Uint8Array(buffer);
+      const encoder = new TextEncoder();
+
+      view.setUint8(0, 0x03); // dBASE III
+      const now = new Date();
+      view.setUint8(1, now.getFullYear() - 1900);
+      view.setUint8(2, now.getMonth() + 1);
+      view.setUint8(3, now.getDate());
+      view.setUint32(4, N, true); // Number of records (Little Endian)
+      view.setUint16(8, headerLen, true);
+      view.setUint16(10, recLen, true);
+
+      // Field descriptors
+      for (let fIdx = 0; fIdx < fields.length; fIdx++) {
+        const f = fields[fIdx];
+        const fOffset = 32 + fIdx * 32;
+        const nameBytes = encoder.encode(f.name);
+        uint8.set(nameBytes.subarray(0, 10), fOffset);
+        view.setUint8(fOffset + 11, 0x43); // 'C' Character
+        view.setUint8(fOffset + 16, f.len);
+      }
+
+      // Header terminator
+      view.setUint8(headerLen - 1, 0x0D);
+
+      // Records
+      let offset = headerLen;
+      for (let i = 0; i < N; i++) {
+        const p = points[i];
+        view.setUint8(offset++, 0x20); // Active record flag (space)
+
+        const values = [
+          p.label,
+          p.parcel,
+          p.category,
+          p.project,
+          String(p.photoNo),
+          p.lat.toFixed(6),
+          p.lon.toFixed(6)
+        ];
+
+        for (let fIdx = 0; fIdx < fields.length; fIdx++) {
+          const flen = fields[fIdx].len;
+          const strVal = values[fIdx] || '';
+          const encoded = encoder.encode(strVal);
+          const writeLen = Math.min(encoded.length, flen);
+          uint8.set(encoded.subarray(0, writeLen), offset);
+          for (let pIdx = writeLen; pIdx < flen; pIdx++) {
+            view.setUint8(offset + pIdx, 0x20); // Pad with spaces
+          }
+          offset += flen;
+        }
+      }
+
+      // End of File marker
+      view.setUint8(totalLen - 1, 0x1A);
+
+      return buffer;
+    }
+
+    // Export Handlers for KML and Shapefile
+    async function executeKmlExport() {
+      const geotagged = state.photos
+        .map((p, idx) => ({ photo: p, index: idx }))
+        .filter(item => item.photo.gps && typeof item.photo.gps.lat === 'number' && typeof item.photo.gps.lon === 'number');
+
+      if (geotagged.length === 0) {
+        showToast('ไม่มีรูปภาพที่มีพิกัด GPS สำหรับส่งออก KML', 'warning');
+        return;
+      }
+
+      const kmlString = generateKmlString(geotagged);
+      const blob = new Blob([kmlString], { type: 'application/vnd.google-earth.kml+xml;charset=utf-8' });
+      const filename = `${getGisExportFilename()}.kml`;
+      downloadBlob(blob, filename);
+      showToast(`ดาวน์โหลดไฟล์ KML (${filename}) สำเร็จ`, 'success');
+    }
+
+    async function executeShpExport() {
+      const geotagged = state.photos
+        .map((p, idx) => ({ photo: p, index: idx }))
+        .filter(item => item.photo.gps && typeof item.photo.gps.lat === 'number' && typeof item.photo.gps.lon === 'number');
+
+      if (geotagged.length === 0) {
+        showToast('ไม่มีรูปภาพที่มีพิกัด GPS สำหรับส่งออก Shapefile', 'warning');
+        return;
+      }
+
+      if (!window.JSZip) {
+        showToast('ไม่พบไลบรารี JSZip กรุณาตรวจสอบอินเทอร์เน็ต', 'error');
+        return;
+      }
+
+      const points = geotagged.map(({ photo, index }) => ({
+        lat: photo.gps.lat,
+        lon: photo.gps.lon,
+        label: getGisLabel(photo),
+        parcel: (state.parcelNumber || '').trim(),
+        category: (photo.caption || '').trim(),
+        project: (state.projectName || '').trim(),
+        photoNo: index + 1
+      }));
+
+      const baseFilename = getGisExportFilename();
+      const shpBuffer = createShpBuffer(points);
+      const shxBuffer = createShxBuffer(points);
+      const dbfBuffer = createDbfBuffer(points);
+
+      const zip = new JSZip();
+      zip.file(`${baseFilename}.shp`, shpBuffer);
+      zip.file(`${baseFilename}.shx`, shxBuffer);
+      zip.file(`${baseFilename}.dbf`, dbfBuffer);
+      zip.file(`${baseFilename}.prj`, WGS84_PRJ);
+      zip.file(`${baseFilename}.cpg`, UTF8_CPG);
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      const filename = `${baseFilename}.zip`;
+      downloadBlob(zipBlob, filename);
+      showToast(`ดาวน์โหลด Shapefile (${filename}) สำเร็จ`, 'success');
+    }
+
+    function setupGisExportHandlers() {
+      const btnKml = document.getElementById('btn-export-kml');
+      const btnShp = document.getElementById('btn-export-shp');
+      const btnFootKml = document.getElementById('btn-footer-kml');
+      const btnFootShp = document.getElementById('btn-footer-shp');
+
+      if (btnKml) btnKml.addEventListener('click', executeKmlExport);
+      if (btnShp) btnShp.addEventListener('click', executeShpExport);
+      if (btnFootKml) btnFootKml.addEventListener('click', executeKmlExport);
+      if (btnFootShp) btnFootShp.addEventListener('click', executeShpExport);
+    }
+
     // Global UI update orchestrator
     function updateUI() {
       updateCompressionBadge();
       renderPhotoCards();
+      updateMap();
       renderA4Pages();
     }
 
@@ -1677,6 +2222,8 @@
       setupPhotoSort();
       setupLightbox();
       setupExportHandlers();
+      setupGisExportHandlers();
+      initMap();
       updateUI();
     });
   </script>
