@@ -287,14 +287,19 @@
 
     <!-- SECTION 3: PHOTO MANAGEMENT (THUMBNAIL CARDS & CONTROLS) -->
     <section id="photos-section" class="space-y-4">
-      <div class="flex items-center justify-between">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
         <h2 class="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
           <svg class="w-5 h-5 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path>
           </svg>
           รายการรูปภาพที่อัปโหลด (<span id="photo-count">0</span> ภาพ)
         </h2>
-        <span class="text-xs text-slate-500">สามารถหมุนภาพ สลับลำดับ และเลือกแท็กคำอธิบายได้อิสระ</span>
+        <div class="flex items-center gap-2 flex-wrap">
+          <button id="btn-toggle-all-dates" type="button" class="hidden text-xs font-semibold px-2.5 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 transition active:scale-95 shadow-xs">
+            📅 สลับประทับวันที่ทุกรูป
+          </button>
+          <span class="text-xs text-slate-500">สามารถหมุนภาพ สลับลำดับ และเลือกแท็กคำอธิบายได้อิสระ</span>
+        </div>
       </div>
 
       <!-- Empty state -->
@@ -816,8 +821,9 @@
       const originalSize = file.size;
       let timestamp = null;
       let gps = null;
+      let exifDateStr = null;
 
-      // 1. Silent EXIF extraction (timestamp & GPS): DO NOT put into caption!
+      // 1. Silent EXIF extraction (timestamp, GPS & date watermark): DO NOT put into caption!
       try {
         if (window.exifr) {
           // Extract GPS coordinates in decimal degrees if available
@@ -830,11 +836,22 @@
               };
             }
           }
-          // Extract timestamp strictly for chronological sorting
+          // Extract true EXIF date strictly (DateTimeOriginal or CreateDate)
           if (typeof window.exifr.parse === 'function') {
-            const exifData = await window.exifr.parse(file, ['DateTimeOriginal']);
-            if (exifData && exifData.DateTimeOriginal) {
-              timestamp = new Date(exifData.DateTimeOriginal);
+            const exifData = await window.exifr.parse(file, ['DateTimeOriginal', 'CreateDate']);
+            if (exifData) {
+              const rawDate = exifData.DateTimeOriginal || exifData.CreateDate;
+              if (rawDate) {
+                const parsedDate = new Date(rawDate);
+                if (!isNaN(parsedDate.getTime())) {
+                  timestamp = parsedDate; // For chronological sorting strictly
+                  // Format strictly as DD/MM/YYYY in Thai Buddhist Era (พ.ศ.) with NO time
+                  const day = String(parsedDate.getDate()).padStart(2, '0');
+                  const month = String(parsedDate.getMonth() + 1).padStart(2, '0');
+                  const thaiYear = parsedDate.getFullYear() + 543;
+                  exifDateStr = `${day}/${month}/${thaiYear}`;
+                }
+              }
             }
           }
         }
@@ -842,10 +859,13 @@
         console.warn('Silent EXIF extraction notice:', exifErr);
       }
 
-      // Fallback timestamp to file.lastModified strictly for chronological sorting
+      // Fallback timestamp to file.lastModified STRICTLY for chronological sorting
       if (!timestamp || isNaN(timestamp.getTime())) {
         timestamp = file.lastModified ? new Date(file.lastModified) : new Date();
       }
+
+      // showDateStamp defaults to true if exifDateStr exists, false if null
+      const showDateStamp = (exifDateStr !== null);
 
       // 2. Load into HTML Image via temporary Object URL
       const tempUrl = URL.createObjectURL(file);
@@ -900,6 +920,8 @@
         originalSize: originalSize,
         compressedSize: compressedSize,
         timestamp: timestamp,
+        exifDateStr: exifDateStr, // 'DD/MM/YYYY' (พ.ศ.) or null
+        showDateStamp: showDateStamp, // boolean
         rotation: 0, // 0, 90, 180, 270
         caption: '', // Caption starts completely empty
         width: targetW,
@@ -949,6 +971,19 @@
     function renderPhotoCards() {
       photoCountSpan.textContent = state.photos.length;
       btnSortChronological.disabled = state.photos.length <= 1;
+
+      // Update Batch Date Stamp Toggle button visibility & label
+      const btnToggleAllDates = document.getElementById('btn-toggle-all-dates');
+      if (btnToggleAllDates) {
+        const photosWithExifDate = state.photos.filter(p => p.exifDateStr);
+        if (photosWithExifDate.length > 0) {
+          btnToggleAllDates.classList.remove('hidden');
+          const anyOff = photosWithExifDate.some(p => !p.showDateStamp);
+          btnToggleAllDates.textContent = anyOff ? '📅 เปิดประทับวันที่ทั้งหมด' : '📅 ปิดประทับวันที่ทั้งหมด';
+        } else {
+          btnToggleAllDates.classList.add('hidden');
+        }
+      }
 
       if (state.photos.length === 0) {
         photosEmptyState.classList.remove('hidden');
@@ -1018,12 +1053,17 @@
             <div class="absolute bottom-1 right-2 px-2 py-0.5 rounded bg-black/60 backdrop-blur-xs text-[10px] text-white font-mono">
               ${formatBytes(photo.compressedSize)}
             </div>
+            ${photo.showDateStamp && photo.exifDateStr ? `
+              <div class="absolute bottom-1 left-2 px-1.5 py-0.5 rounded bg-amber-600/95 text-[10px] text-white font-mono font-bold shadow-sm flex items-center gap-1 border border-amber-400/40">
+                <span>📅 ${escapeHtml(photo.exifDateStr)}</span>
+              </div>
+            ` : ''}
           </div>
 
-          <!-- Multi-Select Quick Tag Pills -->
+          <!-- Multi-Select Quick Tag Pills & Date Stamp Toggle -->
           <div class="space-y-1.5">
-            <div class="text-[11px] font-semibold text-slate-500">แท็กด่วน (กดเพื่อเปิด/ปิด):</div>
-            <div class="flex flex-wrap gap-1.5">
+            <div class="text-[11px] font-semibold text-slate-500">แท็กด่วน & ประทับวันที่:</div>
+            <div class="flex flex-wrap gap-1.5 items-center">
               ${QUICK_TAG_OPTIONS.map(tag => {
                 const isActive = activeTags.includes(tag);
                 return `
@@ -1037,6 +1077,23 @@
                   </button>
                 `;
               }).join('')}
+
+              <!-- EXIF Date Watermark Toggle Pill -->
+              ${photo.exifDateStr ? `
+                <button type="button" class="btn-toggle-datestamp px-2.5 py-1 rounded-lg text-xs font-semibold border transition active:scale-95 flex items-center gap-1 ${
+                  photo.showDateStamp 
+                    ? 'bg-amber-600 text-white border-amber-600 shadow-xs ring-1 ring-amber-500' 
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200'
+                }" title="เปิด/ปิดการประทับวันที่ถ่ายภาพลงบนมุมขวาล่างของรูป">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                  <span>${photo.showDateStamp ? '📅 ใส่วันที่' : '📅 ไม่ใส่วันที่'} (${escapeHtml(photo.exifDateStr)})</span>
+                </button>
+              ` : `
+                <span class="px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed opacity-60 inline-flex items-center gap-1" title="รูปนี้ไม่มีวันที่ถ่ายภาพในข้อมูล EXIF">
+                  <svg class="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
+                  <span>📅 ไม่มีวันที่ EXIF</span>
+                </span>
+              `}
             </div>
           </div>
 
@@ -1094,6 +1151,17 @@
             updateUI();
           });
         });
+
+        // Event: Date Stamp Toggle
+        const btnToggleDate = card.querySelector('.btn-toggle-datestamp');
+        if (btnToggleDate) {
+          btnToggleDate.addEventListener('click', () => {
+            photo.showDateStamp = !photo.showDateStamp;
+            renderPhotoCards();
+            renderA4Pages();
+            showToast(photo.showDateStamp ? 'เปิดการประทับวันที่บนภาพ' : 'ปิดการประทับวันที่บนภาพ', 'info');
+          });
+        }
 
         // Event: Caption Input Manual Edit
         const captionInput = card.querySelector('.input-caption');
@@ -1175,7 +1243,9 @@
             document.fonts.load('700 46px "Sarabun"'),
             document.fonts.load('400 24px "Sarabun"'),
             document.fonts.load('500 24px "Sarabun"'),
-            document.fonts.load('500 26px "Sarabun"')
+            document.fonts.load('500 26px "Sarabun"'),
+            document.fonts.load('700 24px "Sarabun"'),
+            document.fonts.load('700 26px "Sarabun"')
           ]);
           await document.fonts.ready;
         } catch (e) {
@@ -1437,6 +1507,42 @@
 
       ctx.drawImage(img, -origDrawW / 2, -origDrawH / 2, origDrawW, origDrawH);
       ctx.restore();
+
+      // 4.1 Render optional EXIF Date Watermark Stamp (Bottom-Right corner of photo)
+      if (photo.showDateStamp && photo.exifDateStr) {
+        ctx.save();
+        const stampText = photo.exifDateStr;
+        const stampFontSize = captionFontSize || 24; // 24px (for 4 photos/page) or 26px (for 2 photos/page)
+        ctx.font = `700 ${stampFontSize}px "Sarabun", sans-serif`;
+        const textMetrics = ctx.measureText(stampText);
+        const padX = 14;
+        const padY = 7;
+        const pillW = Math.ceil(textMetrics.width + (padX * 2));
+        const pillH = stampFontSize + (padY * 2);
+        const marginEdge = 12;
+
+        const photoRight = centerX + (drawEffectiveW / 2);
+        const photoBottom = centerY + (drawEffectiveH / 2);
+        const pillX = photoRight - pillW - marginEdge;
+        const pillY = photoBottom - pillH - marginEdge;
+
+        // Draw translucent dark pill
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.85)'; // Slate-900 85% opacity
+        if (typeof ctx.roundRect === 'function') {
+          ctx.beginPath();
+          ctx.roundRect(pillX, pillY, pillW, pillH, 6);
+          ctx.fill();
+        } else {
+          ctx.fillRect(pillX, pillY, pillW, pillH);
+        }
+
+        // Draw date text in crisp warm amber/yellow
+        ctx.fillStyle = '#fef08a'; // Yellow-100 / warm amber
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(stampText, pillX + (pillW / 2), pillY + (pillH / 2) + 1);
+        ctx.restore();
+      }
 
       // Draw crisp 1px border around photo frame
       ctx.strokeStyle = '#e2e8f0';
@@ -2223,6 +2329,20 @@ ${placemarks}
       setupLightbox();
       setupExportHandlers();
       setupGisExportHandlers();
+
+      // Batch date stamp toggle
+      const btnToggleAllDates = document.getElementById('btn-toggle-all-dates');
+      if (btnToggleAllDates) {
+        btnToggleAllDates.addEventListener('click', () => {
+          const photosWithExifDate = state.photos.filter(p => p.exifDateStr);
+          if (photosWithExifDate.length === 0) return;
+          const anyOff = photosWithExifDate.some(p => !p.showDateStamp);
+          photosWithExifDate.forEach(p => { p.showDateStamp = anyOff; });
+          updateUI();
+          showToast(anyOff ? 'เปิดประทับวันที่ทุกรูปที่มีข้อมูล EXIF' : 'ปิดประทับวันที่ทุกรูป', 'info');
+        });
+      }
+
       initMap();
       updateUI();
     });
